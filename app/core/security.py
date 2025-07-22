@@ -95,15 +95,31 @@ async def validate_subscriber_access(
     return False
 
 
-def require_suscriptor_activo(
-    token_data: TokenData = Depends(get_empresa_user),
+def require_acceso_suscriptor_activo(
+    token_data: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> TokenData:
-    """Verifica que el suscriptor esté activo además de tener rol empresa"""
-    suscriptor = db.query(Suscriptor).filter_by(id=token_data.sub).first()
+    """Permite acceso si la empresa asociada tiene suscripción activa"""
+    suscriptor_id = None
+
+    if token_data.role == "empresa":
+        suscriptor_id = token_data.sub
+    elif token_data.role == "operator":
+        user = db.query(CuentaUsuario).filter(CuentaUsuario.id == UUID(token_data.sub)).first()
+        if user:
+            suscriptor_id = str(user.suscriptor_id)
+
+    if not suscriptor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No se encontró el suscriptor asociado al usuario"
+        )
+
+    suscriptor = db.query(Suscriptor).filter_by(id=suscriptor_id).first()
     if not suscriptor or suscriptor.estado != "activo":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tu suscripción no está activa o fue cancelada."
         )
+
     return token_data

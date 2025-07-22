@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.core.database import get_db
 from app.core.security import get_current_user, validate_subscriber_access
-from app.core.security import require_suscriptor_activo
+from app.core.security import require_acceso_suscriptor_activo
 from app.services.plantillas_service import get_plantilla
 from app.schemas.auth import TokenData
 from app.schemas.preguntas_schema import (
@@ -41,7 +41,7 @@ async def validate_plantilla_access(
 async def create_pregunta_endpoint(
     plantilla_id: UUID,
     payload: PreguntaCreate,
-    token_data: TokenData = Depends(require_suscriptor_activo),
+    token_data: TokenData = Depends(require_acceso_suscriptor_activo),
     db: Session = Depends(get_db)
 ):
     await validate_plantilla_access(plantilla_id, token_data, db)
@@ -74,7 +74,7 @@ async def update_pregunta_endpoint(
     plantilla_id: UUID,
     pregunta_id: UUID,
     payload: PreguntaUpdate,
-    token_data: TokenData = Depends(require_suscriptor_activo),
+    token_data: TokenData = Depends(require_acceso_suscriptor_activo),
     db: Session = Depends(get_db)
 ):
     await validate_plantilla_access(plantilla_id, token_data, db)
