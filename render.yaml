@@ -2,7 +2,9 @@ services:
   - type: web
     name: surveys-backend
     env: python
-    buildCommand: "pip install -r requirements.txt && alembic upgrade head"
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python -c 'from app.core.database import engine, Base; import app.models; Base.metadata.create_all(bind=engine)'"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
