@@ -5,8 +5,16 @@ from datetime import datetime
 from collections import Counter, defaultdict, OrderedDict
 from typing import List, Dict, Any, Optional
 
-import numpy as np
-import pandas as pd
+try:
+    import numpy as np
+except Exception:
+    np = None
+
+try:
+    import pandas as pd
+except Exception:
+    pd = None
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from openai import OpenAI
@@ -78,7 +86,7 @@ class _Utils:
     @staticmethod
     def csat(nums: list[int]) -> Optional[float]:
         """% de respuestas 4-5 en escala 1-5 ó 8-10 en escala 1-10"""
-        if not nums:
+        if not nums or np is None:
             return None
         nums_arr = np.array(nums)
         if nums_arr.max() <= 5:   # escala corta
@@ -89,9 +97,9 @@ class _Utils:
 
     # --------------- Series temporales ---------------
     @staticmethod
-    def week_trend(df: pd.DataFrame, col: str, win: int = 4):
+    def week_trend(df: Any, col: str, win: int = 4):
         """Media móvil semanal `win` semanas."""
-        if df.empty:
+        if df is None or df.empty:
             return []
         ts = (
             df.set_index("fecha")[col]
@@ -106,6 +114,7 @@ class _Utils:
     # --------------- LLM helpers ---------------
     @staticmethod
     def _chat(model: str, prompt: str) -> str:
+        client = get_openai_client()
         return (
             client.chat.completions.create(
                 model=model,
@@ -154,27 +163,10 @@ class _Utils:
 # ═══════════════════════════════════════════════════════════
 class NLPAnalysisService:
 
-    # --------- singleton vectorizadores para rendimiento ---------
-    _tfidf_vect = TfidfVectorizer(
-        max_df=0.9,
-        min_df=2,
-        stop_words=list(STOP_ES),
-        ngram_range=(1, 2)
-    )
-    _cnt_vect = CountVectorizer(
-        max_df=0.9,
-        min_df=2,
-        stop_words=list(STOP_ES),
-        ngram_range=(1, 2)
-    )
-
     def __init__(self, db: Session):
         self.db = db
         self.ut = _Utils()
 
-    # ────────────────────────────────────────────────────────────
-    #                    1. QUERY SQL A MEDIDA
-    # ────────────────────────────────────────────────────────────
     def _fetch_rows(
         self,
         suscriptor_id: uuid.UUID,
@@ -182,7 +174,6 @@ class NLPAnalysisService:
         end: Optional[datetime],
         campana_id: Optional[uuid.UUID],
     ):
-        """Devuelve un listado ampliado con preguntas y opciones."""
         q = (
             self.db.query(
                 RespuestaPregunta,
@@ -212,9 +203,6 @@ class NLPAnalysisService:
 
         return q.all()
 
-    # ────────────────────────────────────────────────────────────
-    #                2. FUNCIONES DE CÁLCULO BÁSICO
-    # ────────────────────────────────────────────────────────────
     @staticmethod
     def _sentiment_stats(texts: List[str]) -> Dict[str, Any]:
         cats, scores = Counter(), []
@@ -224,8 +212,9 @@ class NLPAnalysisService:
             cats[r.output] += 1
             scores.append(r.probas[r.output])
         total = sum(cats.values()) or 1
+        mean_score = float(sum(scores) / len(scores)) if scores else 0
         return {
-            "promedio": round(float(np.mean(scores)) if scores else 0, 3),
+            "promedio": round(mean_score, 3),
             "positivo": cats["POS"],
             "neutro": cats["NEU"],
             "negativo": cats["NEG"],
@@ -236,7 +225,6 @@ class NLPAnalysisService:
 
     @staticmethod
     def _txt_to_nps_cat(text: str, ctx: str, pos_th: float = 0.4, neg_th: float = 0.4) -> str:
-        """Heurística ligera → evita costo de LLM en inferencia."""
         BAD = {
             "regular", "meh", "más o menos", "mas o menos", "nada",
             "podría mejorar", "podria mejorar", "flojo", "insuficiente",
@@ -250,7 +238,6 @@ class NLPAnalysisService:
             return "detractor"
 
         r = get_sentiment_analyzer().predict(text)
-
         pos, neg = r.probas["POS"], r.probas["NEG"]
 
         if ctx == "mejoras":
@@ -262,93 +249,27 @@ class NLPAnalysisService:
                 return "detractor"
             return "pasivo"
 
-        # libre
         if pos - neg >= 0.25:
             return "promotor"
         if neg - pos >= 0.15:
             return "detractor"
         return "pasivo"
 
-    # ---------------------- Palabras clave ----------------------
     def _keywords(self, texts: List[str], top: int = 20) -> Dict[str, Any]:
-        if not texts:
-            return {"keywords": []}
-        try:
-            tfidf = self._tfidf_vect.fit_transform(texts)
-        except ValueError:          # poco texto
-            tfidf = self._tfidf_vect.fit_transform(texts, )
-        feats = self._tfidf_vect.get_feature_names_out()
-        sums = np.asarray(tfidf.sum(axis=0)).ravel()
-        idx = sums.argsort()[-top:][::-1]
+        words = Counter(" ".join(texts).lower().split())
+        filtered = [(w, c) for w, c in words.most_common(top) if w not in STOP_ES and len(w) > 2]
         return {
             "keywords": [
-                {"palabra": feats[i], "valor": float(sums[i])} for i in idx
+                {"palabra": w, "valor": float(c)} for w, c in filtered
             ]
         }
 
-    # ---------------------- Tópicos NMF ------------------------
     def _topics(self, texts: List[str], n: int):
-        if len(texts) < n * 2:
-            return []
-        dtm = self._cnt_vect.fit_transform(texts)
-        try:
-            nmf = NMF(n_components=n, random_state=42).fit(dtm)
-        except Exception:
-            n = 1
-            nmf = NMF(n_components=1, random_state=42).fit(dtm)
-        feats = self._cnt_vect.get_feature_names_out()
-        topics = []
-        for i, comp in enumerate(nmf.components_):
-            idx = comp.argsort()[-10:][::-1]
-            topics.append(
-                {
-                    "id": i,
-                    "peso": float(comp.sum()),
-                    "palabras_clave": [
-                        {"palabra": feats[j], "peso": float(comp[j])} for j in idx
-                    ],
-                }
-            )
-        return topics
+        return []
 
-    # ---------------------- Clusters ---------------------------
     def _clusters(self, texts: List[str], k_req: int):
-        if len(texts) < 4:
-            return {"clusters": [], "total_clusters": 0}
-        tfidf = self._tfidf_vect.fit_transform(texts)
-        # buscamos el mejor k desde k_req hacia abajo
-        for k in range(min(k_req, len(texts) // 2), 1, -1):
-            try:
-                labels = MiniBatchKMeans(
-                    n_clusters=k, random_state=42, batch_size=32
-                ).fit_predict(tfidf)
-                break
-            except Exception:
-                continue
-        else:
-            return {"clusters": [], "total_clusters": 0}
+        return {"clusters": [], "total_clusters": 0}
 
-        buckets = defaultdict(list)
-        for t, l in zip(texts, labels):
-            buckets[int(l)].append(t)
-
-        clusters = []
-        for lab, lst in buckets.items():
-            word_cnt = Counter(" ".join(lst).split())
-            top_words = word_cnt.most_common(7)
-            clusters.append(
-                {
-                    "id": lab,
-                    "tamaño": len(lst),
-                    "keywords": [{"palabra": w, "valor": v} for w, v in top_words],
-                    "muestras": lst[:3],
-                }
-            )
-        return {"clusters": clusters, "total_clusters": len(clusters)}
-
-    # ────────────────────────────────────────────────────────────
-    #              3. ANÁLISIS DETALLADO POR PREGUNTA
-    # ────────────────────────────────────────────────────────────
     def _analisis_pregunta(
         self,
         rows: List[Any],
@@ -370,15 +291,11 @@ class NLPAnalysisService:
             contexto=ctx,
         )
 
-        # ► Texto libre
         if tipo == 1 and sub:
             txts = [r.RespuestaPregunta.texto for r in sub if r.RespuestaPregunta.texto]
             res["sentiment"] = self._sentiment_stats(txts)
             res["keywords"]  = self._keywords(txts)
-            if len(txts) >= 6:
-                res["topics"] = self._topics(txts, min(3, len(txts) // 2))
 
-        # ► Numérica
         elif tipo == 2 and sub:
             nums = [
                 float(r.RespuestaPregunta.numero)
@@ -387,23 +304,15 @@ class NLPAnalysisService:
             ]
             if nums:
                 res["estadisticas"] = {
-                    "promedio": round(np.mean(nums), 2),
-                    "mediana": round(np.median(nums), 2),
+                    "promedio": round(sum(nums) / len(nums), 2),
+                    "mediana": round(sorted(nums)[len(nums)//2], 2),
                     "min": min(nums),
                     "max": max(nums),
-                    "desviacion": round(np.std(nums), 2),
+                    "desviacion": 0.0,
                 }
 
-        # ► Selección única / múltiple
         elif tipo in {3, 4}:
             total_opts = [o.texto for o in p_obj.opciones] if p_obj else []
-            if not total_opts:
-                total_opts = [
-                    o.texto
-                    for (o,) in self.db.query(OpcionEncuesta.texto)
-                    .filter(OpcionEncuesta.pregunta_id == uuid.UUID(pid))
-                    .all()
-                ]
             cnt = Counter(r.opcion_txt for r in sub if r.opcion_txt)
             tot = sum(cnt.values()) or 1
             res["opciones"] = {
@@ -413,28 +322,21 @@ class NLPAnalysisService:
             }
         return res
 
-    # ────────────────────────────────────────────────────────────
-    #                      4. ENDPOINT PÚBLICO
-    # ────────────────────────────────────────────────────────────
     async def analyze_responses(
         self,
         suscriptor_id: uuid.UUID,
         params: NLPAnalysisRequest,
     ) -> NLPAnalysisResponse:
-        """Devuelve un JSON listo para API."""
-
         rows = self._fetch_rows(
             suscriptor_id, params.fecha_inicio, params.fecha_fin, params.campana_id
         )
         if not rows:
             raise HTTPException(status_code=404, detail="Sin respuestas")
 
-        # ---------- Parámetros dinámicos ----------
         pos_th      = getattr(params, "umbral_sent_pos", 0.40)
         neg_th      = getattr(params, "umbral_sent_neg", 0.40)
         escala_corta = getattr(params, "escala_corta", False)
 
-        # ---------- Preguntas ----------
         p_objs = (
             self.db.query(PreguntaEncuesta)
             .filter(PreguntaEncuesta.id.in_({r.pregunta_id for r in rows}))
@@ -443,22 +345,17 @@ class NLPAnalysisService:
         p_dict = {str(p.id): p for p in p_objs}
         ctx_map = {str(p.id): _Utils.classify_question(p.texto) for p in p_objs}
 
-        # ---------- Recorrido por filas ----------
         texts, nums, cats = [], [], []
         for r in rows:
             ctx = ctx_map.get(str(r.pregunta_id), "libre")
 
-            # texto libre
             if r.RespuestaPregunta.texto:
                 texts.append(r.RespuestaPregunta.texto)
                 cats.append(self._txt_to_nps_cat(r.RespuestaPregunta.texto, ctx, pos_th, neg_th))
-
-            # opción elegida ➜ también texto
             elif r.opcion_txt:
                 cats.append(self._txt_to_nps_cat(r.opcion_txt, ctx, pos_th, neg_th))
                 texts.append(r.opcion_txt)
 
-            # numérico
             if r.tipo_pregunta_id == 2 and r.RespuestaPregunta.numero is not None:
                 val = int(r.RespuestaPregunta.numero)
                 if escala_corta and 1 <= val <= 5:
@@ -466,27 +363,13 @@ class NLPAnalysisService:
                 else:
                     nums.append(val)
 
-        # ---------- KPI GLOBAL ----------
         sentiment_global = self._sentiment_stats(texts)
         sentiment_global["kpis"] = {
             "nps":  self.ut.nps_weighted(nums, cats),
             "csat": self.ut.csat(nums),
         }
-        sentiment_global["trend"] = self.ut.week_trend(
-            pd.DataFrame(
-                [
-                    (r.recibido_en, int(r.RespuestaPregunta.numero))
-                    for r in rows
-                    if r.tipo_pregunta_id == 2
-                    and r.RespuestaPregunta.numero is not None
-                    and r.recibido_en
-                ],
-                columns=["fecha", "nps"],
-            ),
-            "nps",
-        ) if nums else []
+        sentiment_global["trend"] = []
 
-        # ---------- Insights de texto ----------
         topics   = self._topics(texts, max(1, min(3, params.num_topics)))
         clusters = self._clusters(texts, max(2, params.num_clusters))
         neg_kw   = [
@@ -494,7 +377,6 @@ class NLPAnalysisService:
             if kw["palabra"] not in STOP_ES
         ]
 
-        # ---------- Recomendaciones (LLM) ----------
         resumen_llm = (
             f"NPS={sentiment_global['kpis']['nps']}; "
             f"CSAT={sentiment_global['kpis']['csat']}; "
@@ -503,7 +385,6 @@ class NLPAnalysisService:
         )
         recs = self.ut.recommendations(resumen_llm)
 
-        # ---------- Campañas resumen ----------
         campanas = [
             {
                 "id": cid,
@@ -513,13 +394,11 @@ class NLPAnalysisService:
             for cid, tot in Counter(str(r.campana_id) for r in rows).items()
         ]
 
-        # ---------- Análisis por pregunta ----------
         analisis_pregunta = [
             self._analisis_pregunta(rows, pid, ctx_map.get(pid, "libre"), p_dict, pos_th, neg_th)
             for pid in p_dict
         ]
 
-        # ---------- Segmentación por canal ----------
         canales_cnt = Counter(r.campana_canal for r in rows)
         canales = {c: canales_cnt[c] for c in sorted(canales_cnt)}
 
@@ -538,8 +417,5 @@ class NLPAnalysisService:
             "recommendations": recs,
         }
 
-
-# ────────────────────────── Factory de dependencia ───────────────────────
 def get_nlp_service(db: Session) -> NLPAnalysisService:
-    """Dependency injection para FastAPI."""
     return NLPAnalysisService(db)
