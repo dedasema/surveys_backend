@@ -19,7 +19,6 @@ faker
 reportlab
 qrcode
 scikit-learn
-pysentimiento
 aiosmtplib
 thefuzz
 redis==6.2.0
