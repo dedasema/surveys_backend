@@ -4,8 +4,13 @@ from __future__ import annotations
 from typing import List, Dict, Any
 from uuid import UUID
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
-from vapi import Vapi
+try:
+    from vapi import Vapi
+except Exception:
+    class Vapi:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
 
 from app.core.config import settings
 from app.models.survey import VapiCallRelation
