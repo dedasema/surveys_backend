@@ -1,32 +1,35 @@
 from pydantic_settings import BaseSettings
 from pydantic import AnyUrl
+from typing import Optional
 import os
 
 class Settings(BaseSettings):
     DATABASE_URL: AnyUrl
-    SECRET_KEY: str
+    SECRET_KEY: str = "super_secret_default_key_2026"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    WHAPI_TOKEN: str
+    WHAPI_TOKEN: Optional[str] = ""
     WHAPI_API_URL: str = "https://gate.whapi.cloud"
-    OPENAI_API_KEY: str
-    VAPI_API_URL: str 
-    VAPI_API_KEY: str
-    API_BASE_URL: str 
-    VAPI_PHONE_NUMBER_ID: str
-    VAPI_ASSISTANT_ID: str
-    STRIPE_SECRET_KEY: str
-    STRIPE_PUBLIC_KEY: str
-    STRIPE_WEBHOOK_SECRET: str
+    OPENAI_API_KEY: Optional[str] = ""
+    VAPI_API_URL: Optional[str] = "https://api.vapi.ai"
+    VAPI_API_KEY: Optional[str] = ""
+    API_BASE_URL: Optional[str] = "http://localhost:8000"
+    VAPI_PHONE_NUMBER_ID: Optional[str] = ""
+    VAPI_ASSISTANT_ID: Optional[str] = ""
+    STRIPE_SECRET_KEY: Optional[str] = ""
+    STRIPE_PUBLIC_KEY: Optional[str] = ""
+    STRIPE_WEBHOOK_SECRET: Optional[str] = ""
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    SURVEY_LINK_EXPIRY_DAYS: int 
-    SMTP_SERVER: str 
-    SMTP_PORT: int 
-    SMTP_USERNAME: str 
-    SMTP_PASSWORD: str 
-    REDIS_URL: str
+    SURVEY_LINK_EXPIRY_DAYS: int = 7
+    SMTP_SERVER: Optional[str] = "localhost"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = ""
+    SMTP_PASSWORD: Optional[str] = ""
+    REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()
+
