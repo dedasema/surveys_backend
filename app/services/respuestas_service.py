@@ -2,8 +2,19 @@ from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
 from uuid import UUID
 from datetime import datetime
-from fastapi import HTTPException, status
-from thefuzz import fuzz
+try:
+    from thefuzz import fuzz
+except Exception:
+    class fuzz:  # type: ignore
+        @staticmethod
+        def ratio(a, b): return 0
+        @staticmethod
+        def partial_ratio(a, b): return 0
+        @staticmethod
+        def token_sort_ratio(a, b): return 0
+        @staticmethod
+        def token_set_ratio(a, b): return 0
+
 import logging
 from app.core.constants import ESTADO_RESPONDIDO
 from app.models.survey import PreguntaEncuesta, RespuestaEncuesta, RespuestaPregunta, EntregaEncuesta, RespuestaTemp

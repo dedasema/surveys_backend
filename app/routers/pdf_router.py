@@ -1,14 +1,27 @@
 from uuid import UUID
 from typing import List
-import io, zipfile, qrcode
+import io, zipfile
+try:
+    import qrcode
+except Exception:
+    qrcode = None  # type: ignore
+
+try:
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
+except Exception:
+    Canvas = None  # type: ignore
+    A4 = None  # type: ignore
+    mm = None  # type: ignore
+    ImageReader = None  # type: ignore
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
-from reportlab.pdfgen.canvas import Canvas
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
+
+
 
 from app.core.constants import ESTADO_RESPONDIDO
 from app.core.database import get_db
@@ -16,12 +29,14 @@ from app.models.survey import EntregaEncuesta, PreguntaEncuesta
 
 router = APIRouter(prefix="/entregas", tags=["PDF / Formularios"])
 
-PAGE_W, PAGE_H = A4
-TOP_MARGIN      = 20 * mm
-BOTTOM_MARGIN   = 20 * mm
-QR_SIZE         = 45 * mm
-LINE_HEIGHT     = 5  * mm
-BOX_SIZE        = 4  * mm
+PAGE_W, PAGE_H = A4 if A4 else (595.27, 841.89)
+mm_val          = mm if mm else 2.83465
+TOP_MARGIN      = 20 * mm_val
+BOTTOM_MARGIN   = 20 * mm_val
+QR_SIZE         = 45 * mm_val
+LINE_HEIGHT     = 5  * mm_val
+BOX_SIZE        = 4  * mm_val
+
 TEXT_SIZE       = 9
 TITLE_SIZE      = 14
 

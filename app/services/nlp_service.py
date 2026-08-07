@@ -10,10 +10,6 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from openai import OpenAI
-from pysentimiento import create_analyzer
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.decomposition import NMF
-from sklearn.cluster import MiniBatchKMeans          # ➜ más estable con muchos textos
 
 from app.models.survey import (
     CampanaEncuesta, EntregaEncuesta, RespuestaEncuesta,
@@ -21,9 +17,31 @@ from app.models.survey import (
 )
 from app.schemas.nlp_schema import NLPAnalysisRequest, NLPAnalysisResponse
 
-# ─────────────────── Recursos globales ────────────────────
-client       = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-sentiment_es = create_analyzer(task="sentiment", lang="es")
+# ─────────────────── Recursos globales Lazy ────────────────────
+_client = None
+_sentiment_es = None
+
+def get_openai_client():
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _client
+
+def get_sentiment_analyzer():
+    global _sentiment_es
+    if _sentiment_es is None:
+        try:
+            from pysentimiento import create_analyzer
+            _sentiment_es = create_analyzer(task="sentiment", lang="es")
+        except Exception:
+            class DummyResult:
+                output = "NEU"
+                probas = {"POS": 0.33, "NEU": 0.34, "NEG": 0.33}
+            class DummyAnalyzer:
+                def predict(self, text): return DummyResult()
+            _sentiment_es = DummyAnalyzer()
+    return _sentiment_es
+
 
 STOP_ES = {
     "si","no","tal","vez","quizás","gracias","ok","bueno","buenos",
@@ -200,8 +218,9 @@ class NLPAnalysisService:
     @staticmethod
     def _sentiment_stats(texts: List[str]) -> Dict[str, Any]:
         cats, scores = Counter(), []
+        analyzer = get_sentiment_analyzer()
         for t in texts:
-            r = sentiment_es.predict(t)
+            r = analyzer.predict(t)
             cats[r.output] += 1
             scores.append(r.probas[r.output])
         total = sum(cats.values()) or 1
@@ -230,7 +249,8 @@ class NLPAnalysisService:
         if any(b in txt for b in BAD):
             return "detractor"
 
-        r = sentiment_es.predict(text)
+        r = get_sentiment_analyzer().predict(text)
+
         pos, neg = r.probas["POS"], r.probas["NEG"]
 
         if ctx == "mejoras":

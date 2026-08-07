@@ -1,5 +1,11 @@
 from typing import List, Optional, Dict
-import pandas as pd
+
+try:
+    import pandas as pd
+except Exception:
+    pd = None  # type: ignore
+
+
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID

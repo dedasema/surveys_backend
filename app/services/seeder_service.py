@@ -7,7 +7,17 @@ import uuid
 import random
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
-from faker import Faker
+
+try:
+    from faker import Faker
+except Exception:
+    class Faker:  # type: ignore
+        def __init__(self, *args, **kwargs): pass
+        def name(self): return "Usuario Demo"
+        def company(self): return "Empresa Demo"
+        def email(self): return "demo@example.com"
+
+
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password

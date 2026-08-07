@@ -1,4 +1,8 @@
-import aiosmtplib
+try:
+    import aiosmtplib
+except Exception:
+    aiosmtplib = None  # type: ignore
+
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
