@@ -27,7 +27,13 @@ app.add_middleware(
 )
 
 
-Base.metadata.create_all(bind=engine)
+@app.on_event("startup")
+def startup_db_client():
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Error initializing DB tables on startup: {e}")
+
 
 # Registrar todos los routers
 app.include_router(auth.router)
