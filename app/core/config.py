@@ -1,11 +1,13 @@
 from pydantic_settings import BaseSettings
-from pydantic import AnyUrl
-from typing import Optional
+from typing import Optional, Union
 import os
 
 class Settings(BaseSettings):
-    DATABASE_URL: AnyUrl
-    SECRET_KEY: str = "super_secret_default_key_2026"
+    DATABASE_URL: Union[str, None] = os.getenv(
+        "DATABASE_URL", 
+        "postgresql://postgres:postgres@localhost:5432/surveys_db"
+    )
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "super_secret_default_key_2026")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     WHAPI_TOKEN: Optional[str] = ""
@@ -27,9 +29,15 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = ""
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
+    @property
+    def sync_database_url(self) -> str:
+        url = str(self.DATABASE_URL or "")
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
+
     class Config:
         env_file = ".env"
         extra = "ignore"
 
 settings = Settings()
-
