@@ -12,7 +12,8 @@ from app.schemas.subscription import (
 )
 from app.core.config import settings
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+if stripe is not None:
+    stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', None)
 
 # ---------------- PlanSuscripcion ----------------
 
