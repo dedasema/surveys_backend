@@ -20,7 +20,6 @@ pandas
 faker
 reportlab
 qrcode
-scikit-learn
 aiosmtplib
 thefuzz
 redis==6.2.0
