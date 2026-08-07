@@ -17,7 +17,10 @@ except Exception:
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 from app.models.survey import (
     CampanaEncuesta, EntregaEncuesta, RespuestaEncuesta,

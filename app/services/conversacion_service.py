@@ -9,6 +9,22 @@ from datetime import datetime
 from typing import Any, Dict, List, Tuple
 from uuid import UUID
 
+from sqlalchemy.orm import Session, joinedload
+
+from app.core.config import settings
+from app.models.survey import (
+    CampanaEncuesta,
+    ConversacionEncuesta,
+    EntregaEncuesta,
+    PlantillaEncuesta,
+    PreguntaEncuesta,
+    RespuestaEncuesta,
+    RespuestaPregunta,
+)
+from app.services.entregas_service import mark_as_responded
+from app.services.respuestas_service import crear_respuesta_encuesta
+from app.services.shared_service import get_entrega_con_plantilla
+
 logger = logging.getLogger(__name__)
 
 _client = None

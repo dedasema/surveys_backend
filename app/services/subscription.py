@@ -1,4 +1,7 @@
-import stripe
+try:
+    import stripe
+except ImportError:
+    stripe = None
 from sqlalchemy.orm import Session
 from typing import List, Optional
 

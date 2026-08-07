@@ -1,9 +1,13 @@
-import stripe
+try:
+    import stripe
+except ImportError:
+    stripe = None
 from app.models import Suscriptor, PlanSuscripcion, SuscripcionSuscriptor
 from datetime import datetime
 from app.core.config import settings
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+if stripe is not None:
+    stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', None)
 
 def crear_suscripcion_stripe(db, suscriptor_id, plan_id):
     suscriptor = db.query(Suscriptor).filter_by(id=suscriptor_id).first()

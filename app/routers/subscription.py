@@ -1,7 +1,10 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-import stripe
+try:
+    import stripe
+except ImportError:
+    stripe = None
 
 from app.core.database import get_db
 from app.core.security import get_admin_user, get_empresa_user
