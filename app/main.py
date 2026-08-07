@@ -28,11 +28,9 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def startup_db_client():
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as e:
-        print(f"Error initializing DB tables on startup: {e}")
+async def startup_event():
+    print("FastAPI application startup complete.")
+
 
 
 # Registrar todos los routers
