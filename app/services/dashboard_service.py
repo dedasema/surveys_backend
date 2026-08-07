@@ -6,8 +6,6 @@ from decimal import Decimal
 from typing import Dict, List
 from uuid import UUID
 
-from fastapi import HTTPException, status
-from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, Extra
 from sqlalchemy.orm import Session
 
@@ -61,6 +59,7 @@ class DashboardService:
     """
 
     def __init__(self, openai_key: str) -> None:
+        from openai import AsyncOpenAI
         self.client = AsyncOpenAI(api_key=openai_key)
 
     # ------------- utilidades ------------- #

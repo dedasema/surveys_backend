@@ -12,7 +12,6 @@ import os, json
 from uuid import UUID
 from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.schemas.plantillas_schema import PlantillaCreate
@@ -24,11 +23,18 @@ from app.models.cuenta_usuario import CuentaUsuario
 
 # ─────────────────── Config ─────────────────── #
 OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o")  
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise RuntimeError("Debes definir OPENAI_API_KEY en .env")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+_client = None
+
+def get_openai_client():
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("Debes definir OPENAI_API_KEY en .env")
+        from openai import OpenAI
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 GLOBAL_CONTEXT = """
 Eres el asistente virtual de SurveySaaS.
@@ -155,6 +161,7 @@ async def chat_completion(
     base_msgs = _build_msgs(message, context)
     msgs = (history or [])[-6:] + base_msgs  
 
+    client = get_openai_client()
     resp = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=msgs,
