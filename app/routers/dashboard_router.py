@@ -7,15 +7,21 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.schemas.auth import TokenData
-from app.services.dashboard_service import DashboardService
 
 router = APIRouter(
     prefix="/dashboard",
     tags=["Dashboard"]
 )
 
-# Instancia del servicio
-dashboard_service = DashboardService(settings.OPENAI_API_KEY)
+# Lazy instantiation to avoid importing openai at module load
+_dashboard_service = None
+
+def _get_dashboard_service():
+    global _dashboard_service
+    if _dashboard_service is None:
+        from app.services.dashboard_service import DashboardService
+        _dashboard_service = DashboardService(settings.OPENAI_API_KEY)
+    return _dashboard_service
 
 @router.get("/campaigns/{campaign_id}/analysis")
 async def get_campaign_analysis(
@@ -34,6 +40,7 @@ async def get_campaign_analysis(
             )
 
         # Obtener análisis
+        dashboard_service = _get_dashboard_service()
         analysis = await dashboard_service.get_campaign_analysis(db, campaign_id)
         
         return analysis
