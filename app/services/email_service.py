@@ -16,26 +16,29 @@ async def _send_mail_helper(message: MIMEMultipart) -> None:
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
         raise ValueError("SMTP_USERNAME o SMTP_PASSWORD no están configurados")
 
+    clean_password = settings.SMTP_PASSWORD.replace(" ", "").strip()
+
     if aiosmtplib is not None:
         await aiosmtplib.send(
             message,
             hostname=settings.SMTP_SERVER,
             port=settings.SMTP_PORT,
             username=settings.SMTP_USERNAME,
-            password=settings.SMTP_PASSWORD,
+            password=clean_password,
             start_tls=(settings.SMTP_PORT == 587),
             use_tls=(settings.SMTP_PORT == 465),
+            timeout=15.0
         )
     else:
         def _sync_send():
             if settings.SMTP_PORT == 465:
-                with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
-                    server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                with smtplib.SMTP_SSL(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=15.0) as server:
+                    server.login(settings.SMTP_USERNAME, clean_password)
                     server.send_message(message)
             else:
-                with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+                with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=15.0) as server:
                     server.starttls()
-                    server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                    server.login(settings.SMTP_USERNAME, clean_password)
                     server.send_message(message)
 
         await asyncio.to_thread(_sync_send)
