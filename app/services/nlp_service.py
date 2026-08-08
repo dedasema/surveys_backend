@@ -116,22 +116,39 @@ class _Utils:
 
     # --------------- LLM helpers ---------------
     @staticmethod
-    def _chat(model: str, prompt: str) -> str:
-        client = get_openai_client()
-        return (
-            client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                timeout=20,
-            )
-            .choices[0]
-            .message
-            .content
-            .strip()
-        )
+    async def _chat(model: str, prompt: str) -> str:
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key and gemini_key.strip():
+            from app.services.gemini_service import call_gemini_text
+            try:
+                res = await call_gemini_text(prompt)
+                if res:
+                    return res
+            except Exception as e:
+                print(f"Error llamando a Gemini API: {e}")
+
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key and openai_key.strip():
+            try:
+                client = get_openai_client()
+                return (
+                    client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        timeout=20,
+                    )
+                    .choices[0]
+                    .message
+                    .content
+                    .strip()
+                )
+            except Exception as e:
+                print(f"Error llamando a OpenAI API: {e}")
+
+        return "1. Mantener un seguimiento activo de la satisfacción.\n2. Analizar comentarios negativos periódicamente.\n3. Capacitar al personal en resolución de dudas.\n4. Medir NPS frecuentemente.\n5. Optimizar los tiempos de respuesta."
 
     @classmethod
-    def recommendations(cls, resume: str) -> str:
+    async def recommendations(cls, resume: str) -> str:
         prompt = (
             "Eres consultor de customer experience.\n\n"
             f"Resumen analítico:\n{resume}\n\n"
@@ -140,7 +157,7 @@ class _Utils:
             "Usa un lenguaje sencillo, directo y empático. "
             "Respuesta en lista numerada.\n"
         )
-        return cls._chat("gpt-4o", prompt)
+        return await cls._chat("gpt-4o", prompt)
 
     # --------------- Clasificación de preguntas ---------------
     @classmethod
@@ -386,7 +403,7 @@ class NLPAnalysisService:
             f"Top palabras negativas={', '.join(neg_kw)}; "
             f"Detractores={cats.count('detractor')}"
         )
-        recs = self.ut.recommendations(resumen_llm)
+        recs = await self.ut.recommendations(resumen_llm)
 
         campanas = [
             {

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     WHAPI_TOKEN: Optional[str] = ""
     WHAPI_API_URL: str = "https://gate.whapi.cloud"
     OPENAI_API_KEY: Optional[str] = ""
+    GEMINI_API_KEY: Optional[str] = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
     VAPI_API_URL: Optional[str] = "https://api.vapi.ai"
     VAPI_API_KEY: Optional[str] = ""
     API_BASE_URL: Optional[str] = "http://localhost:8000"

@@ -158,6 +158,35 @@ async def chat_completion(
         answer      -> texto al usuario
         action_log  -> acciones ejecutadas para transparencia
     """
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key and gemini_key.strip():
+        from app.services.gemini_service import call_gemini_chat_with_tools
+        try:
+            sys_inst = GLOBAL_CONTEXT
+            if context:
+                sys_inst += f"\n🧭 Contexto de pantalla: {context.get('section')} ({context.get('route')})"
+
+            res = await call_gemini_chat_with_tools(
+                system_instruction=sys_inst,
+                user_message=message,
+                tools=TOOLS
+            )
+
+            if res.get("type") == "tool_call" and res.get("name") == "create_template":
+                args = res.get("args", {})
+                r = _crear_plantilla(db, _suscriptor_id(token_data, db), args)
+                return {
+                    "answer": (
+                        f"Voy a crear la plantilla «{args.get('nombre', '')}»…\n"
+                        f"¡Listo! Plantilla «{r['plantilla'].nombre}» creada con éxito."
+                    ),
+                    "action_log": r["action_log"],
+                }
+
+            return {"answer": res.get("text", "").strip(), "action_log": []}
+        except Exception as e:
+            print(f"Error llamando a Gemini en chat_service: {e}")
+
     base_msgs = _build_msgs(message, context)
     msgs = (history or [])[-6:] + base_msgs  
 
