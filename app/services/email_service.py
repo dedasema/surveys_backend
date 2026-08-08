@@ -45,7 +45,8 @@ async def _send_mail(
                         "subject": asunto,
                         "html": html_content,
                         "text": text_content,
-                        "sender_name": s_name
+                        "sender_name": s_name,
+                        "secret": settings.GMAIL_SECRET_TOKEN or ""
                     }
                 )
                 if res.status_code in (200, 201):
