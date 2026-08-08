@@ -101,5 +101,9 @@ class SuscriptorUpdateRequest(BaseModel):
     nombre: str
     email: EmailStr
     telefono: Optional[str] = None
+
+class OperatorUpdateRequest(BaseModel):
+    nombre_completo: str
+    email: EmailStr
     
 UserProfileOut = Union[AdminProfileOut, SuscriptorProfileOut, OperatorProfileOut]

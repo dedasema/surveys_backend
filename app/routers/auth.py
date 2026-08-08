@@ -15,7 +15,7 @@ from app.models.suscriptor import Suscriptor
 from app.models.cuenta_usuario import CuentaUsuario
 
 from app.schemas.auth import (
-    AdminCreate, AdminOut, AdminProfileOut, AdminUpdateRequest, ForgotPasswordRequest, LoginRequest, OperatorProfileOut, ResetPasswordRequest,
+    AdminCreate, AdminOut, AdminProfileOut, AdminUpdateRequest, ForgotPasswordRequest, LoginRequest, OperatorProfileOut, OperatorUpdateRequest, ResetPasswordRequest,
     SuscriptorCreate, SuscriptorOut,
     CuentaUsuarioCreate, CuentaUsuarioOut, SuscriptorProfileOut, SuscriptorUpdateRequest,
     Token, UserProfileOut, TokenData
@@ -466,6 +466,45 @@ def update_suscriptor_profile(
         estado=suscriptor.estado,
         rol=rol.nombre,
         creado_en=suscriptor.creado_en
+    )
+
+
+@router.put("/update/operator", response_model=OperatorProfileOut)
+def update_operator_profile(
+    payload: OperatorUpdateRequest,
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if token_data.role != "operator":
+        raise HTTPException(status_code=403, detail="Acceso no autorizado")
+
+    user = db.query(CuentaUsuario).filter_by(id=token_data.sub).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if payload.email != user.email:
+        exists = db.query(CuentaUsuario).filter(
+            CuentaUsuario.suscriptor_id == user.suscriptor_id,
+            CuentaUsuario.email == payload.email,
+            CuentaUsuario.id != user.id
+        ).first()
+        if exists:
+            raise HTTPException(status_code=400, detail="El email ya está registrado para este suscriptor")
+
+    user.nombre_completo = payload.nombre_completo
+    user.email = payload.email
+    db.commit()
+    db.refresh(user)
+
+    rol = db.get(Rol, user.rol_id)
+    return OperatorProfileOut(
+        id=user.id,
+        email=user.email,
+        rol=rol.nombre,
+        nombre_completo=user.nombre_completo,
+        suscriptor_id=user.suscriptor_id,
+        activo=user.activo,
+        creado_en=user.creado_en
     )
 
 @router.get(
