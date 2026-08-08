@@ -126,14 +126,16 @@ async def register_usuario(
     token = jwt.encode(token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
 
-    enviado = await enviar_email_recuperacion_contrasena(
-        destinatario_email=payload.email,
-        destinatario_nombre=payload.nombre_completo,
-        url_reset=reset_link
-    )
-
-    if not enviado:
-        raise HTTPException(status_code=500, detail="Usuario creado, pero no se pudo enviar el correo de recuperación")
+    try:
+        enviado = await enviar_email_recuperacion_contrasena(
+            destinatario_email=payload.email,
+            destinatario_nombre=payload.nombre_completo,
+            url_reset=reset_link
+        )
+        if not enviado:
+            print(f"Warning: No se pudo enviar el correo de recuperación a {payload.email} (SMTP deshabilitado o no configurado)")
+    except Exception as e:
+        print(f"Error enviando correo de recuperación a {payload.email}: {e}")
 
     return user
 
