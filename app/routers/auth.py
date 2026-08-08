@@ -124,7 +124,7 @@ async def register_usuario(
         "exp": datetime.utcnow() + timedelta(hours=1)
     }
     token = jwt.encode(token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    reset_link = f"{settings.clean_frontend_url}/reset-password?token={token}"
 
     try:
         enviado = await enviar_email_recuperacion_contrasena(
@@ -266,7 +266,7 @@ async def request_registration(
     )
 
     # 4. Armar el link
-    url_verificacion = f"{settings.FRONTEND_URL}/verify-registration?token={token}"
+    url_verificacion = f"{settings.clean_frontend_url}/verify-registration?token={token}"
 
     # 5. Enviar el email
     from app.services.email_service import enviar_email_verificacion
@@ -371,7 +371,7 @@ async def forgot_password(
         "exp": datetime.utcnow() + timedelta(hours=1)
     }
     token = jwt.encode(token_data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    reset_link = f"{settings.clean_frontend_url}/reset-password?token={token}"
 
     enviado = await enviar_email_recuperacion_contrasena(
         destinatario_email=email,

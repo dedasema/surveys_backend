@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
     @property
+    def clean_frontend_url(self) -> str:
+        url = str(self.FRONTEND_URL or "http://localhost:3000").strip()
+        return url.rstrip("/")
+
+    @property
     def sync_database_url(self) -> str:
         url = str(self.DATABASE_URL or "")
         if url.startswith("postgres://"):
