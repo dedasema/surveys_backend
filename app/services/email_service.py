@@ -30,9 +30,32 @@ async def _send_mail(
     text_content: str
 ) -> bool:
     """
-    Envía un correo utilizando Brevo HTTP API o Resend HTTP API (puerto 443 HTTPS),
-    o SMTP como alternativa.
+    Envía un correo utilizando Google Apps Script Webhook (Gmail por HTTPS 443),
+    Brevo HTTP API, Resend HTTP API, o SMTP como alternativa.
     """
+    # 0. Intentar vía Google Apps Script Webhook (Gmail directo sobre HTTPS puerto 443)
+    if settings.GMAIL_WEBHOOK_URL and settings.GMAIL_WEBHOOK_URL.strip():
+        try:
+            s_name, _ = _parse_sender(settings.EMAIL_FROM or "", "SurveySaaS")
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                res = await client.post(
+                    settings.GMAIL_WEBHOOK_URL.strip(),
+                    json={
+                        "to": destinatario_email,
+                        "subject": asunto,
+                        "html": html_content,
+                        "text": text_content,
+                        "sender_name": s_name
+                    }
+                )
+                if res.status_code in (200, 201):
+                    logger.info(f"Correo enviado exitosamente a {destinatario_email} vía Google Apps Script Webhook")
+                    return True
+                else:
+                    logger.error(f"Google Apps Script Webhook devolvió error {res.status_code}: {res.text}")
+        except Exception as e:
+            logger.error(f"Excepción llamando a Google Apps Script Webhook: {e}")
+
     # 1. Intentar vía Brevo HTTP API (Recomendado para Render Free - No requiere dominio propio)
     if settings.BREVO_API_KEY and settings.BREVO_API_KEY.strip():
         try:

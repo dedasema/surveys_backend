@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = ""
     RESEND_API_KEY: Optional[str] = ""
     BREVO_API_KEY: Optional[str] = ""
+    GMAIL_WEBHOOK_URL: Optional[str] = ""
     EMAIL_FROM: Optional[str] = ""
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
