@@ -66,7 +66,7 @@ async def startup_event():
     db = SessionLocal()
     try:
         # Roles
-        roles_default = ["admin", "empresa", "usuario", "operator"]
+        roles_default = ["admin", "empresa", "operator"]
         for r_name in roles_default:
             if not db.query(Rol).filter_by(nombre=r_name).first():
                 db.add(Rol(nombre=r_name))

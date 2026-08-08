@@ -82,7 +82,7 @@ class SuscriptorProfileOut(UserProfileBase):
     estado: Optional[str] = None
 
 class OperatorProfileOut(UserProfileBase):
-    tipo: str = "usuario"
+    tipo: str = "operator"
     nombre_completo: str
     suscriptor_id: UUID
     activo: bool
