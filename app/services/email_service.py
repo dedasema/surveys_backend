@@ -13,6 +13,15 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+def _parse_sender(raw_sender: str, default_email: str):
+    if not raw_sender:
+        raw_sender = default_email
+    if "<" in raw_sender and ">" in raw_sender:
+        name = raw_sender.split("<")[0].strip()
+        email = raw_sender.split("<")[1].split(">")[0].strip()
+        return name or "SurveySaaS", email
+    return "SurveySaaS", raw_sender.strip()
+
 async def _send_mail(
     destinatario_email: str,
     destinatario_nombre: str,
@@ -21,10 +30,41 @@ async def _send_mail(
     text_content: str
 ) -> bool:
     """
-    Envía un correo utilizando Resend HTTP API (si RESEND_API_KEY está configurado) 
+    Envía un correo utilizando Brevo HTTP API o Resend HTTP API (puerto 443 HTTPS),
     o SMTP como alternativa.
     """
-    # 1. Intentar vía Resend HTTP API (Recomendado para Render Free Tier - Puerto 443 HTTPS)
+    # 1. Intentar vía Brevo HTTP API (Recomendado para Render Free - No requiere dominio propio)
+    if settings.BREVO_API_KEY and settings.BREVO_API_KEY.strip():
+        try:
+            s_name, s_email = _parse_sender(
+                settings.EMAIL_FROM or settings.SMTP_USERNAME or "",
+                settings.SMTP_USERNAME or "noreply@surveysaas.com"
+            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={
+                        "api-key": settings.BREVO_API_KEY.strip(),
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    json={
+                        "sender": {"name": s_name, "email": s_email},
+                        "to": [{"email": destinatario_email, "name": destinatario_nombre}],
+                        "subject": asunto,
+                        "htmlContent": html_content,
+                        "textContent": text_content
+                    }
+                )
+                if res.status_code in (200, 201):
+                    logger.info(f"Correo enviado exitosamente a {destinatario_email} vía Brevo HTTP API")
+                    return True
+                else:
+                    logger.error(f"Brevo API devolvió error {res.status_code}: {res.text}")
+        except Exception as e:
+            logger.error(f"Excepción llamando a Brevo HTTP API: {e}")
+
+    # 2. Intentar vía Resend HTTP API
     if settings.RESEND_API_KEY and settings.RESEND_API_KEY.strip():
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -50,9 +90,9 @@ async def _send_mail(
         except Exception as e:
             logger.error(f"Excepción llamando a Resend HTTP API: {e}")
 
-    # 2. Intentar vía SMTP (puerto 587/465)
+    # 3. Intentar vía SMTP (puerto 587/465)
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
-        logger.warning(f"No se pudo enviar correo a {destinatario_email}: Sin credenciales SMTP ni RESEND_API_KEY")
+        logger.warning(f"No se pudo enviar correo a {destinatario_email}: Sin credenciales de Brevo/Resend ni SMTP")
         return False
 
     try:
