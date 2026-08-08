@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USERNAME: Optional[str] = ""
     SMTP_PASSWORD: Optional[str] = ""
+    RESEND_API_KEY: Optional[str] = ""
+    EMAIL_FROM: Optional[str] = "SurveySaaS <onboarding@resend.dev>"
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
     @property
