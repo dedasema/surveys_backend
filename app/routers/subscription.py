@@ -7,7 +7,9 @@ except ImportError:
     stripe = None
 
 from app.core.database import get_db
-from app.core.security import get_admin_user, get_empresa_user
+from app.core.security import get_admin_user, get_empresa_user, get_current_user
+from app.schemas.auth import TokenData
+from app.models.cuenta_usuario import CuentaUsuario
 from app.core.config import settings
 from datetime import datetime
 
@@ -106,14 +108,18 @@ def create_suscripcion_endpoint(
     return create_suscripcion(db, payload)
 
 @router.get(
-    "/actual",
-    dependencies=[Depends(get_empresa_user)]
+    "/actual"
 )
 def obtener_suscripcion_actual(
-    current_user: dict = Depends(get_empresa_user),
+    token_data: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    suscriptor_id = current_user.get("id") or current_user.get("suscriptor_id")
+    suscriptor_id = token_data.sub
+    if token_data.role == "operator":
+        user = db.query(CuentaUsuario).filter(CuentaUsuario.id == token_data.sub).first()
+        if user and user.suscriptor_id:
+            suscriptor_id = str(user.suscriptor_id)
+
     suscripcion = (
         db.query(SuscripcionSuscriptor)
         .filter_by(suscriptor_id=suscriptor_id, estado="activo")
