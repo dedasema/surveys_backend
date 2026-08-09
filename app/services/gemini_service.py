@@ -21,25 +21,33 @@ MODELS_TO_TRY = [
 ]
 
 async def _execute_gemini_request(client: httpx.AsyncClient, api_key: str, payload: dict) -> httpx.Response:
-    """Intenta ejecutar la petición contra la lista de modelos compatibles con la cuota gratuita."""
+    """Intenta ejecutar la petición contra la lista de modelos compatibles con reintento si recibe 429."""
+    import asyncio
     last_res = None
-    # 1. Probar con la lista de modelos
-    for model in MODELS_TO_TRY:
-        url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-        res = await client.post(url, json=payload)
-        if res.status_code == 200:
-            return res
-        last_res = res
+    
+    # 1. Probar con la lista de modelos (hasta 2 intentos con pausa de 2s si hay ráfaga 429)
+    for attempt in range(2):
+        for model in MODELS_TO_TRY:
+            url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                return res
+            last_res = res
+            if res.status_code == 429 and attempt == 0:
+                await asyncio.sleep(2.0)
 
     # 2. Si falló y la petición incluía herramientas (tools), reintentar mensaje simple sin tools
     if "tools" in payload:
         payload_no_tools = {k: v for k, v in payload.items() if k != "tools"}
-        for model in MODELS_TO_TRY:
-            url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-            res = await client.post(url, json=payload_no_tools)
-            if res.status_code == 200:
-                return res
-            last_res = res
+        for attempt in range(2):
+            for model in MODELS_TO_TRY:
+                url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
+                res = await client.post(url, json=payload_no_tools)
+                if res.status_code == 200:
+                    return res
+                last_res = res
+                if res.status_code == 429 and attempt == 0:
+                    await asyncio.sleep(2.0)
 
     return last_res
 
