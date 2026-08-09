@@ -12,6 +12,37 @@ def get_gemini_api_key() -> str:
     key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
     return key.strip() if key else ""
 
+MODELS_TO_TRY = [
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-flash-8b",
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-pro-latest",
+    "gemini-2.0-flash"
+]
+
+async def _execute_gemini_request(client: httpx.AsyncClient, api_key: str, payload: dict) -> httpx.Response:
+    """Intenta ejecutar la petición contra la lista de modelos compatibles con la cuota gratuita."""
+    last_res = None
+    # 1. Probar con la lista de modelos
+    for model in MODELS_TO_TRY:
+        url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
+        res = await client.post(url, json=payload)
+        if res.status_code == 200:
+            return res
+        last_res = res
+
+    # 2. Si falló y la petición incluía herramientas (tools), reintentar mensaje simple sin tools
+    if "tools" in payload:
+        payload_no_tools = {k: v for k, v in payload.items() if k != "tools"}
+        for model in MODELS_TO_TRY:
+            url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
+            res = await client.post(url, json=payload_no_tools)
+            if res.status_code == 200:
+                return res
+            last_res = res
+
+    return last_res
+
 async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
     """
     Realiza una consulta de texto simple a la API de Gemini (puerto 443 HTTPS).
@@ -20,9 +51,6 @@ async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
     api_key = get_gemini_api_key()
     if not api_key:
         raise ValueError("GEMINI_API_KEY no está configurada")
-
-    model = settings.GEMINI_MODEL or "gemini-2.0-flash"
-    url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
 
     payload: Dict[str, Any] = {
         "contents": [
@@ -42,14 +70,11 @@ async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
         }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await client.post(url, json=payload)
+        res = await _execute_gemini_request(client, api_key, payload)
         if res.status_code != 200:
-            logger.error(f"Error en Gemini API status {res.status_code}: {res.text}")
-            # Intentar fallback a gemini-1.5-flash si falló
-            fallback_url = f"{GEMINI_BASE_URL}/gemini-1.5-flash:generateContent?key={api_key}"
-            res = await client.post(fallback_url, json=payload)
-            if res.status_code != 200:
-                raise RuntimeError(f"Error llamando a Gemini API: {res.text}")
+            if res.status_code == 429:
+                raise RuntimeError("La API de Gemini en Google AI Studio ha alcanzado la cuota del plan gratuito. Reintenta en unos segundos.")
+            raise RuntimeError(f"Error llamando a Gemini API ({res.status_code}): {res.text}")
 
         data = res.json()
         try:
@@ -94,9 +119,6 @@ async def call_gemini_chat_with_tools(
     if not api_key:
         raise ValueError("GEMINI_API_KEY no está configurada")
 
-    model = settings.GEMINI_MODEL or "gemini-2.0-flash"
-    url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-
     payload: Dict[str, Any] = {
         "contents": [
             {
@@ -127,22 +149,11 @@ async def call_gemini_chat_with_tools(
             payload["tools"] = [{"functionDeclarations": function_declarations}]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await client.post(url, json=payload)
+        res = await _execute_gemini_request(client, api_key, payload)
         if res.status_code != 200:
-            logger.error(f"Error Gemini Chat API status {res.status_code}: {res.text}")
-            # Intentar fallback a gemini-1.5-flash
-            fallback_url = f"{GEMINI_BASE_URL}/gemini-1.5-flash:generateContent?key={api_key}"
-            res = await client.post(fallback_url, json=payload)
-
-            # Si falló con tools, reintentar sin tools (chat directo)
-            if res.status_code != 200 and "tools" in payload:
-                payload_no_tools = {k: v for k, v in payload.items() if k != "tools"}
-                res = await client.post(url, json=payload_no_tools)
-                if res.status_code != 200:
-                    res = await client.post(fallback_url, json=payload_no_tools)
-
-            if res.status_code != 200:
-                raise RuntimeError(f"Gemini API ({res.status_code}): {res.text}")
+            if res.status_code == 429:
+                raise RuntimeError("La cuota gratuita de tu API Key de Gemini se ha pausado por límite de peticiones. Por favor reintenta en 30 segundos.")
+            raise RuntimeError(f"Gemini API ({res.status_code}): {res.text}")
 
         data = res.json()
         candidates = data.get("candidates", [])
