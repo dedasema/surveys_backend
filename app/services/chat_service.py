@@ -187,6 +187,13 @@ async def chat_completion(
         except Exception as e:
             print(f"Error llamando a Gemini en chat_service: {e}")
 
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not openai_key or not openai_key.strip():
+        return {
+            "answer": "El asistente virtual requiere que configure la clave GEMINI_API_KEY u OPENAI_API_KEY en las variables de entorno de Render.",
+            "action_log": []
+        }
+
     base_msgs = _build_msgs(message, context)
     msgs = (history or [])[-6:] + base_msgs  
 
