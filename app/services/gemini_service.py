@@ -63,6 +63,24 @@ async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
             logger.error(f"Error parseando respuesta de Gemini: {e}")
             return ""
 
+def _convert_to_gemini_schema(schema: Any) -> Any:
+    """Convierte los tipos de esquema de OpenAI (lowercase) al formato OpenAPI de Gemini (UPPERCASE)."""
+    if not isinstance(schema, dict):
+        return schema
+    converted = {}
+    for k, v in schema.items():
+        if k == "nullable":
+            continue
+        elif k == "type" and isinstance(v, str):
+            converted[k] = v.upper()
+        elif isinstance(v, dict):
+            converted[k] = _convert_to_gemini_schema(v)
+        elif isinstance(v, list):
+            converted[k] = [_convert_to_gemini_schema(item) if isinstance(item, dict) else item for item in v]
+        else:
+            converted[k] = v
+    return converted
+
 async def call_gemini_chat_with_tools(
     system_instruction: str,
     user_message: str,
@@ -95,7 +113,7 @@ async def call_gemini_chat_with_tools(
     }
 
     if tools:
-        # Convertir tools estilo OpenAI a formato Gemini
+        # Convertir tools estilo OpenAI a formato Gemini (con tipos en MAYÚSCULAS)
         function_declarations = []
         for t in tools:
             if t.get("type") == "function":
@@ -103,7 +121,7 @@ async def call_gemini_chat_with_tools(
                 function_declarations.append({
                     "name": fn["name"],
                     "description": fn.get("description", ""),
-                    "parameters": fn.get("parameters", {})
+                    "parameters": _convert_to_gemini_schema(fn.get("parameters", {}))
                 })
         if function_declarations:
             payload["tools"] = [{"functionDeclarations": function_declarations}]
@@ -115,6 +133,14 @@ async def call_gemini_chat_with_tools(
             # Intentar fallback a gemini-1.5-flash
             fallback_url = f"{GEMINI_BASE_URL}/gemini-1.5-flash:generateContent?key={api_key}"
             res = await client.post(fallback_url, json=payload)
+
+            # Si falló con tools, reintentar sin tools (chat directo)
+            if res.status_code != 200 and "tools" in payload:
+                payload_no_tools = {k: v for k, v in payload.items() if k != "tools"}
+                res = await client.post(url, json=payload_no_tools)
+                if res.status_code != 200:
+                    res = await client.post(fallback_url, json=payload_no_tools)
+
             if res.status_code != 200:
                 raise RuntimeError(f"Gemini API ({res.status_code}): {res.text}")
 
