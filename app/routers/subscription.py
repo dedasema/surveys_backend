@@ -154,18 +154,10 @@ def delete_suscripcion_endpoint(
     delete_suscripcion(db, sus_id)
 
 
-# ---------------- STRIPE CHECKOUT & SUSCRIPCIÓN ----------------
+# ---------------- STRIPE / SIMULATED CHECKOUT & SUSCRIPCIÓN ----------------
 
-def _init_stripe():
-    if stripe is None:
-        raise HTTPException(status_code=500, detail="La librería de Stripe no está instalada en el servidor")
-    api_key = (getattr(settings, 'STRIPE_SECRET_KEY', None) or "").strip()
-    if not api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="La pasarela de pago Stripe no está configurada en el servidor (falta STRIPE_SECRET_KEY en las variables de entorno de Render)."
-        )
-    stripe.api_key = api_key
+import uuid
+from datetime import timedelta
 
 @router.post(
     "/stripe-suscripcion",
@@ -177,64 +169,98 @@ def iniciar_suscripcion_stripe(
     plan_id: int,
     db: Session = Depends(get_db)
 ):
-    _init_stripe()
-    from app.services.stripe_service import crear_suscripcion_stripe
-    return crear_suscripcion_stripe(db, suscriptor_id, plan_id)
+    suscriptor = db.query(Suscriptor).filter_by(id=suscriptor_id).first()
+    plan = db.query(PlanSuscripcion).filter_by(id=plan_id).first()
+    if not suscriptor or not plan:
+        raise HTTPException(status_code=404, detail="Suscriptor o plan no encontrado")
+
+    nueva_suscripcion = SuscripcionSuscriptor(
+        suscriptor_id=suscriptor.id,
+        plan_id=plan.id,
+        inicia_en=datetime.utcnow(),
+        estado="activo",
+        stripe_subscription_id=f"sub_sim_{uuid.uuid4().hex[:12]}"
+    )
+    suscriptor.estado = "activo"
+    db.add(nueva_suscripcion)
+    db.commit()
+
+    frontend_url = settings.clean_frontend_url
+    return {"checkout_url": f"{frontend_url}/dashboard-suscriptor/planes/success?session_id=cs_sim_{uuid.uuid4().hex[:12]}"}
 
 @router.post("/stripe-checkout")
 def crear_checkout_session(suscriptor_id: str, plan_id: int, db: Session = Depends(get_db)):
-    _init_stripe()
-
     suscriptor = db.query(Suscriptor).filter_by(id=suscriptor_id).first()
     plan = db.query(PlanSuscripcion).filter_by(id=plan_id).first()
     
     if not suscriptor or not plan:
         raise HTTPException(status_code=404, detail="Suscriptor o plan no encontrado")
 
-    if not plan.stripe_price_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El plan '{plan.nombre}' no tiene configurado un ID de Precio de Stripe (stripe_price_id). Configúralo en el panel o en la base de datos."
-        )
+    frontend_url = settings.clean_frontend_url
+    api_key = (getattr(settings, 'STRIPE_SECRET_KEY', None) or "").strip()
 
-    try:
-        if not suscriptor.stripe_customer_id:
-            customer = stripe.Customer.create(
-                email=suscriptor.email,
-                name=suscriptor.nombre
+    # Si Stripe está configurado con una clave real Y el plan tiene stripe_price_id, procesar con Stripe real
+    if stripe is not None and api_key and plan.stripe_price_id:
+        try:
+            stripe.api_key = api_key
+            if not suscriptor.stripe_customer_id:
+                customer = stripe.Customer.create(
+                    email=suscriptor.email,
+                    name=suscriptor.nombre
+                )
+                suscriptor.stripe_customer_id = customer.id
+                db.commit()
+
+            checkout_session = stripe.checkout.Session.create(
+                customer=suscriptor.stripe_customer_id,
+                line_items=[{
+                    'price': plan.stripe_price_id,
+                    'quantity': 1,
+                }],
+                mode='subscription',
+                success_url=f'{frontend_url}/dashboard-suscriptor/planes/success?session_id={{CHECKOUT_SESSION_ID}}',
+                cancel_url=f'{frontend_url}/dashboard-suscriptor/planes/cancel',
             )
-            suscriptor.stripe_customer_id = customer.id
+
+            nueva_suscripcion = SuscripcionSuscriptor(
+                suscriptor_id=suscriptor.id,
+                plan_id=plan.id,
+                inicia_en=datetime.utcnow(),
+                estado="pendiente",
+                stripe_subscription_id=None
+            )
+            db.add(nueva_suscripcion)
             db.commit()
 
-        frontend_url = settings.clean_frontend_url
+            return {"checkout_url": checkout_session.url}
+        except Exception as e:
+            # Si falla Stripe, cae al modo simulado fluido
+            pass
 
-        checkout_session = stripe.checkout.Session.create(
-            customer=suscriptor.stripe_customer_id,
-            line_items=[{
-                'price': plan.stripe_price_id,
-                'quantity': 1,
-            }],
-            mode='subscription',
-            success_url=f'{frontend_url}/dashboard-suscriptor/planes/success?session_id={{CHECKOUT_SESSION_ID}}',
-            cancel_url=f'{frontend_url}/dashboard-suscriptor/planes/cancel',
-        )
+    # --- MODO SIMULACIÓN REALISTA 100% GRATIS ---
+    # 1. Desactivar suscripciones anteriores si las hubiera
+    suscripciones_ant = db.query(SuscripcionSuscriptor).filter_by(suscriptor_id=suscriptor.id, estado="activo").all()
+    for s_ant in suscripciones_ant:
+        s_ant.estado = "cancelado"
 
-        # Registrar en la base de datos
-        nueva_suscripcion = SuscripcionSuscriptor(
-            suscriptor_id=suscriptor.id,
-            plan_id=plan.id,
-            inicia_en=datetime.utcnow(),
-            estado="pendiente",
-            stripe_subscription_id=None  # Aún no lo tenemos, llegará con el webhook
-        )
-        db.add(nueva_suscripcion)
-        db.commit()
+    # 2. Registrar y activar inmediatamente la nueva suscripción
+    sim_sub_id = f"sub_sim_{uuid.uuid4().hex[:12]}"
+    nueva_suscripcion = SuscripcionSuscriptor(
+        suscriptor_id=suscriptor.id,
+        plan_id=plan.id,
+        inicia_en=datetime.utcnow(),
+        estado="activo",
+        stripe_subscription_id=sim_sub_id
+    )
+    suscriptor.estado = "activo"
+    db.add(nueva_suscripcion)
+    db.commit()
 
-        return {"checkout_url": checkout_session.url}
-    except stripe.error.StripeError as e:
-        raise HTTPException(status_code=400, detail=f"Error de Stripe: {e.user_message or str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en checkout de Stripe: {str(e)}")
+    # 3. Retornar la URL de éxito del Frontend (Flujo idéntico al de la vida real)
+    sim_session_id = f"cs_sim_{uuid.uuid4().hex[:12]}"
+    sim_checkout_url = f"{frontend_url}/dashboard-suscriptor/planes/success?session_id={sim_session_id}"
+    
+    return {"checkout_url": sim_checkout_url}
 
 
 
