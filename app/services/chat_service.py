@@ -158,8 +158,8 @@ async def chat_completion(
         answer      -> texto al usuario
         action_log  -> acciones ejecutadas para transparencia
     """
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key and gemini_key.strip():
+    gemini_key = (settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")).strip()
+    if gemini_key:
         from app.services.gemini_service import call_gemini_chat_with_tools
         try:
             sys_inst = GLOBAL_CONTEXT
@@ -186,9 +186,13 @@ async def chat_completion(
             return {"answer": res.get("text", "").strip(), "action_log": []}
         except Exception as e:
             print(f"Error llamando a Gemini en chat_service: {e}")
+            return {
+                "answer": f"Error comunicándose con Gemini API: {str(e)}",
+                "action_log": []
+            }
 
-    openai_key = os.getenv("OPENAI_API_KEY")
-    if not openai_key or not openai_key.strip():
+    openai_key = (settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "")).strip()
+    if not openai_key:
         return {
             "answer": "El asistente virtual requiere que configure la clave GEMINI_API_KEY u OPENAI_API_KEY en las variables de entorno de Render.",
             "action_log": []

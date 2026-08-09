@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 def get_gemini_api_key() -> str:
-    return (settings.GEMINI_API_KEY or "").strip()
+    key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
+    return key.strip() if key else ""
 
 async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
     """
@@ -45,12 +46,9 @@ async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
         if res.status_code != 200:
             logger.error(f"Error en Gemini API status {res.status_code}: {res.text}")
             # Intentar fallback a gemini-1.5-flash si falló
-            if "gemini-2.0" in model:
-                fallback_url = f"{GEMINI_BASE_URL}/gemini-1.5-flash:generateContent?key={api_key}"
-                res = await client.post(fallback_url, json=payload)
-                if res.status_code != 200:
-                    raise RuntimeError(f"Error llamando a Gemini API: {res.text}")
-            else:
+            fallback_url = f"{GEMINI_BASE_URL}/gemini-1.5-flash:generateContent?key={api_key}"
+            res = await client.post(fallback_url, json=payload)
+            if res.status_code != 200:
                 raise RuntimeError(f"Error llamando a Gemini API: {res.text}")
 
         data = res.json()
@@ -114,7 +112,11 @@ async def call_gemini_chat_with_tools(
         res = await client.post(url, json=payload)
         if res.status_code != 200:
             logger.error(f"Error Gemini Chat API status {res.status_code}: {res.text}")
-            raise RuntimeError(f"Error llamando a Gemini Chat API: {res.text}")
+            # Intentar fallback a gemini-1.5-flash
+            fallback_url = f"{GEMINI_BASE_URL}/gemini-1.5-flash:generateContent?key={api_key}"
+            res = await client.post(fallback_url, json=payload)
+            if res.status_code != 200:
+                raise RuntimeError(f"Gemini API ({res.status_code}): {res.text}")
 
         data = res.json()
         candidates = data.get("candidates", [])
