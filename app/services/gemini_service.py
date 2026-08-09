@@ -13,8 +13,9 @@ def get_gemini_api_key() -> str:
     return key.strip() if key else ""
 
 MODELS_TO_TRY = [
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-flash-8b"
+    "gemini-2.0-flash-lite",   # Verified via ListModels — fastest, lowest quota cost
+    "gemini-2.0-flash",        # Verified via ListModels — fast fallback
+    "gemini-2.5-flash",        # Verified via ListModels — stable mid-tier
 ]
 
 async def _execute_gemini_request(client: httpx.AsyncClient, api_key: str, payload: dict) -> httpx.Response:
