@@ -11,6 +11,7 @@ from __future__ import annotations
 import os, json
 from uuid import UUID
 from typing import Any, Dict, List, Optional
+from app.core.config import settings
 
 from sqlalchemy.orm import Session
 
