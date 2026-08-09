@@ -14,40 +14,43 @@ def get_gemini_api_key() -> str:
 
 MODELS_TO_TRY = [
     "gemini-1.5-flash-latest",
-    "gemini-1.5-flash-8b",
-    "gemini-2.0-flash-exp",
-    "gemini-1.5-pro-latest",
-    "gemini-2.0-flash"
+    "gemini-1.5-flash-8b"
 ]
 
 async def _execute_gemini_request(client: httpx.AsyncClient, api_key: str, payload: dict) -> httpx.Response:
-    """Intenta ejecutar la petición contra la lista de modelos compatibles con reintento si recibe 429."""
+    """
+    Intenta ejecutar la petición contra Gemini con presupuesto acotado de latencia (máximo 1 reintento de 1.5s).
+    """
     import asyncio
     last_res = None
     
-    # 1. Probar con la lista de modelos (hasta 2 intentos con pausa de 2s si hay ráfaga 429)
-    for attempt in range(2):
+    # 1. Primer intento con los modelos rápidos
+    for model in MODELS_TO_TRY:
+        url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
+        res = await client.post(url, json=payload)
+        if res.status_code == 200:
+            return res
+        last_res = res
+
+    # 2. Si el servidor respondió 429 (límite de ráfaga), hacer UN solo reintento de 1.5s
+    if last_res and last_res.status_code == 429:
+        await asyncio.sleep(1.5)
         for model in MODELS_TO_TRY:
             url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
             res = await client.post(url, json=payload)
             if res.status_code == 200:
                 return res
             last_res = res
-            if res.status_code == 429 and attempt == 0:
-                await asyncio.sleep(2.0)
 
-    # 2. Si falló y la petición incluía herramientas (tools), reintentar mensaje simple sin tools
+    # 3. Si falló por formato de herramientas (tools), reintentar mensaje plano sin tools
     if "tools" in payload:
         payload_no_tools = {k: v for k, v in payload.items() if k != "tools"}
-        for attempt in range(2):
-            for model in MODELS_TO_TRY:
-                url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-                res = await client.post(url, json=payload_no_tools)
-                if res.status_code == 200:
-                    return res
-                last_res = res
-                if res.status_code == 429 and attempt == 0:
-                    await asyncio.sleep(2.0)
+        for model in MODELS_TO_TRY:
+            url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
+            res = await client.post(url, json=payload_no_tools)
+            if res.status_code == 200:
+                return res
+            last_res = res
 
     return last_res
 
