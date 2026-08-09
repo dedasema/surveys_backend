@@ -72,7 +72,10 @@ async def startup_event():
 
     # Seed initial catalog data (roles, tipos_pregunta, etc.)
     from app.core.database import SessionLocal
-    from app.models.catalogos import Rol, TipoPregunta, Canal, EstadoCampana, EstadoEntrega
+    from app.models.catalogos import (
+        Rol, TipoPregunta, Canal, EstadoCampana, EstadoEntrega,
+        EstadoDocumento, EstadoPago, MetodoPago
+    )
     db = SessionLocal()
     try:
         # Roles
@@ -105,8 +108,37 @@ async def startup_event():
             if not db.query(EstadoEntrega).filter_by(nombre=ee_name).first():
                 db.add(EstadoEntrega(nombre=ee_name))
 
+        # Estado Documento
+        estados_doc = ["borrador", "generado", "enviado", "firmado", "archivado"]
+        for ed_name in estados_doc:
+            if not db.query(EstadoDocumento).filter_by(nombre=ed_name).first():
+                db.add(EstadoDocumento(nombre=ed_name))
+
+        # Estado Pago
+        estados_pago = ["pendiente", "pagado", "fallido", "reembolsado", "cancelado"]
+        for ep_name in estados_pago:
+            if not db.query(EstadoPago).filter_by(nombre=ep_name).first():
+                db.add(EstadoPago(nombre=ep_name))
+
+        # Metodo Pago
+        metodos_pago = ["tarjeta_credito", "tarjeta_debito", "transferencia", "paypal", "stripe"]
+        for mp_name in metodos_pago:
+            if not db.query(MetodoPago).filter_by(nombre=mp_name).first():
+                db.add(MetodoPago(nombre=mp_name))
+
+        # Planes por defecto (Suscripciones)
+        from app.models.subscription import PlanSuscripcion
+        planes_default = [
+            {"nombre": "Gratuito", "precio_mensual": 0.0, "descripcion": "Plan básico gratuito de prueba"},
+            {"nombre": "Profesional", "precio_mensual": 29.99, "descripcion": "Plan profesional con funciones avanzadas e IA"},
+            {"nombre": "Enterprise", "precio_mensual": 99.99, "descripcion": "Plan empresarial ilimitado"}
+        ]
+        for p_data in planes_default:
+            if not db.query(PlanSuscripcion).filter_by(nombre=p_data["nombre"]).first():
+                db.add(PlanSuscripcion(**p_data))
+
         db.commit()
-        print("Catalogs seeded successfully.")
+        print("Catalogs and default plans seeded successfully.")
     except Exception as e:
         db.rollback()
         print(f"Error seeding catalogs: {e}")
