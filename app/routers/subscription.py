@@ -154,7 +154,18 @@ def delete_suscripcion_endpoint(
     delete_suscripcion(db, sus_id)
 
 
-# ---------------- STRIPE SUSCRIPCIÓN ----------------
+# ---------------- STRIPE CHECKOUT & SUSCRIPCIÓN ----------------
+
+def _init_stripe():
+    if stripe is None:
+        raise HTTPException(status_code=500, detail="La librería de Stripe no está instalada en el servidor")
+    api_key = (getattr(settings, 'STRIPE_SECRET_KEY', None) or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="La pasarela de pago Stripe no está configurada en el servidor (falta STRIPE_SECRET_KEY en las variables de entorno de Render)."
+        )
+    stripe.api_key = api_key
 
 @router.post(
     "/stripe-suscripcion",
@@ -166,53 +177,64 @@ def iniciar_suscripcion_stripe(
     plan_id: int,
     db: Session = Depends(get_db)
 ):
+    _init_stripe()
     from app.services.stripe_service import crear_suscripcion_stripe
     return crear_suscripcion_stripe(db, suscriptor_id, plan_id)
 
 @router.post("/stripe-checkout")
 def crear_checkout_session(suscriptor_id: str, plan_id: int, db: Session = Depends(get_db)):
+    _init_stripe()
+
     suscriptor = db.query(Suscriptor).filter_by(id=suscriptor_id).first()
     plan = db.query(PlanSuscripcion).filter_by(id=plan_id).first()
     
     if not suscriptor or not plan:
         raise HTTPException(status_code=404, detail="Suscriptor o plan no encontrado")
 
-    if not suscriptor.stripe_customer_id:
-        customer = stripe.Customer.create(
-            email=suscriptor.email,
-            name=suscriptor.nombre
+    if not plan.stripe_price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El plan '{plan.nombre}' no tiene configurado un ID de Precio de Stripe (stripe_price_id). Configúralo en el panel o en la base de datos."
         )
-        suscriptor.stripe_customer_id = customer.id
+
+    try:
+        if not suscriptor.stripe_customer_id:
+            customer = stripe.Customer.create(
+                email=suscriptor.email,
+                name=suscriptor.nombre
+            )
+            suscriptor.stripe_customer_id = customer.id
+            db.commit()
+
+        frontend_url = settings.clean_frontend_url
+
+        checkout_session = stripe.checkout.Session.create(
+            customer=suscriptor.stripe_customer_id,
+            line_items=[{
+                'price': plan.stripe_price_id,
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=f'{frontend_url}/dashboard-suscriptor/planes/success?session_id={{CHECKOUT_SESSION_ID}}',
+            cancel_url=f'{frontend_url}/dashboard-suscriptor/planes/cancel',
+        )
+
+        # Registrar en la base de datos
+        nueva_suscripcion = SuscripcionSuscriptor(
+            suscriptor_id=suscriptor.id,
+            plan_id=plan.id,
+            inicia_en=datetime.utcnow(),
+            estado="pendiente",
+            stripe_subscription_id=None  # Aún no lo tenemos, llegará con el webhook
+        )
+        db.add(nueva_suscripcion)
         db.commit()
 
-    frontend_url = settings.FRONTEND_URL
-    # Concatenamos "https://" si no está presente en el frontend_url
-    if not frontend_url.startswith("http://") and not frontend_url.startswith("https://"):
-        frontend_url = "https://" + frontend_url
-
-    checkout_session = stripe.checkout.Session.create(
-        customer=suscriptor.stripe_customer_id,
-        line_items=[{
-            'price': plan.stripe_price_id,
-            'quantity': 1,
-        }],
-        mode='subscription',
-        success_url=f'{frontend_url}/dashboard-suscriptor/planes/success?session_id={{CHECKOUT_SESSION_ID}}',
-        cancel_url=f'{frontend_url}/dashboard-suscriptor/planes/cancel',
-    )
-
-    # Registrar en la base de datos
-    nueva_suscripcion = SuscripcionSuscriptor(
-        suscriptor_id=suscriptor.id,
-        plan_id=plan.id,
-        inicia_en=datetime.utcnow(),
-        estado="pendiente",
-        stripe_subscription_id=None  # Aún no lo tenemos, llegará con el webhook
-    )
-    db.add(nueva_suscripcion)
-    db.commit()
-
-    return {"checkout_url": checkout_session.url}
+        return {"checkout_url": checkout_session.url}
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=f"Error de Stripe: {e.user_message or str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en checkout de Stripe: {str(e)}")
 
 
 
@@ -308,6 +330,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 )
 def obtener_metricas_dashboard(db: Session = Depends(get_db)):
     try:
+        _init_stripe()
         # --- 1. Balance de Stripe ---
         balance = stripe.Balance.retrieve()
 
