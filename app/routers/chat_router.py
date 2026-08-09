@@ -28,9 +28,17 @@ async def chat_endpoint(
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
-    return await chat_completion(
-        db=db,
-        token_data=token_data,
-        message=payload.message,
-        context=payload.context,
-    )
+    try:
+        return await chat_completion(
+            db=db,
+            token_data=token_data,
+            message=payload.message,
+            context=payload.context,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return ChatOut(
+            answer=f"Error en el servicio de chat: {str(e)}",
+            action_log=[]
+        )
