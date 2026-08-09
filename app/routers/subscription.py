@@ -106,6 +106,48 @@ def create_suscripcion_endpoint(
     return create_suscripcion(db, payload)
 
 @router.get(
+    "/actual",
+    dependencies=[Depends(get_empresa_user)]
+)
+def obtener_suscripcion_actual(
+    current_user: dict = Depends(get_empresa_user),
+    db: Session = Depends(get_db)
+):
+    suscriptor_id = current_user.get("id") or current_user.get("suscriptor_id")
+    suscripcion = (
+        db.query(SuscripcionSuscriptor)
+        .filter_by(suscriptor_id=suscriptor_id, estado="activo")
+        .order_by(SuscripcionSuscriptor.inicia_en.desc())
+        .first()
+    )
+    if not suscripcion:
+        suscripcion = (
+            db.query(SuscripcionSuscriptor)
+            .filter_by(suscriptor_id=suscriptor_id)
+            .order_by(SuscripcionSuscriptor.inicia_en.desc())
+            .first()
+        )
+    
+    if not suscripcion:
+        return None
+
+    return {
+        "id": suscripcion.id,
+        "suscriptor_id": suscripcion.suscriptor_id,
+        "plan_id": suscripcion.plan_id,
+        "estado": suscripcion.estado,
+        "inicia_en": suscripcion.inicia_en,
+        "fin_en": suscripcion.fin_en,
+        "plan": {
+            "id": suscripcion.plan.id,
+            "nombre": suscripcion.plan.nombre,
+            "precio_mensual": suscripcion.plan.precio_mensual,
+            "descripcion": suscripcion.plan.descripcion,
+            "caracteristicas": getattr(suscripcion.plan, "caracteristicas", "")
+        } if suscripcion.plan else None
+    }
+
+@router.get(
     "/suscripciones",
     response_model=list[SuscripcionSuscriptorOut],
     dependencies=[Depends(get_empresa_user)]
