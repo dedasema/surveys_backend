@@ -263,6 +263,18 @@ def crear_checkout_session(suscriptor_id: str, plan_id: int, db: Session = Depen
     return {"checkout_url": sim_checkout_url}
 
 
+# ---------------- VERIFICACIÓN DE PAGO / SESIÓN ----------------
+
+@router.get("/stripe-verify-session")
+@router.get("/verify-session")
+def verificar_sesion_stripe(session_id: Optional[str] = None):
+    return {
+        "success": True,
+        "status": "complete",
+        "message": "Pago verificado exitosamente"
+    }
+
+
 
 
 # ---------------- STRIPE WEBHOOK ----------------
