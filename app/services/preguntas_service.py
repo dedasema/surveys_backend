@@ -14,23 +14,39 @@ def get_next_orden(db: Session, plantilla_id: UUID) -> int:
         .order_by(desc(PreguntaEncuesta.orden))
         .first()
     )
-    return (ultimo.orden + 1) if ultimo else 1
+    return (ultimo.orden + 1) if (ultimo and ultimo.orden is not None) else 1
 
 def create_pregunta(
     db: Session, 
     plantilla_id: UUID, 
     payload: PreguntaCreate
 ) -> PreguntaEncuesta:
-    # Si no se especifica orden, usar el siguiente disponible
-    if not payload.orden:
+    # Si el orden viene especificado, verificar que no duplique el UniqueConstraint
+    if payload.orden:
+        existe_orden = db.query(PreguntaEncuesta).filter(
+            PreguntaEncuesta.plantilla_id == plantilla_id,
+            PreguntaEncuesta.orden == payload.orden
+        ).first()
+        if existe_orden:
+            payload.orden = get_next_orden(db, plantilla_id)
+    else:
         payload.orden = get_next_orden(db, plantilla_id)
     
-    # Crear la pregunta
-    pregunta = PreguntaEncuesta(**payload.model_dump(), plantilla_id=plantilla_id)
-    db.add(pregunta)
-    db.commit()
-    db.refresh(pregunta)
-    return pregunta
+    try:
+        pregunta = PreguntaEncuesta(**payload.model_dump(), plantilla_id=plantilla_id)
+        db.add(pregunta)
+        db.commit()
+        db.refresh(pregunta)
+        return pregunta
+    except Exception as e:
+        db.rollback()
+        # Fallback defensivo ante conflicto de concurrencia
+        payload.orden = get_next_orden(db, plantilla_id)
+        pregunta = PreguntaEncuesta(**payload.model_dump(), plantilla_id=plantilla_id)
+        db.add(pregunta)
+        db.commit()
+        db.refresh(pregunta)
+        return pregunta
 
 def get_pregunta(db: Session, pregunta_id: UUID) -> Optional[PreguntaEncuesta]:
     return db.query(PreguntaEncuesta).filter(PreguntaEncuesta.id == pregunta_id).first()

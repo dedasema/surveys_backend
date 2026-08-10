@@ -16,7 +16,7 @@ class OpcionOut(OpcionBase):
     model_config = {"from_attributes": True}
 
 class PreguntaBase(BaseModel):
-    orden: int
+    orden: Optional[int] = None
     texto: str
     tipo_pregunta_id: int
     obligatorio: bool = True

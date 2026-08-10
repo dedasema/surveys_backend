@@ -86,12 +86,18 @@ async def validate_subscriber_access(
     db: Session = Depends(get_db)
 ) -> bool:
     """Valida que el usuario tenga acceso a los recursos del suscriptor"""
-    if token_data.role == "empresa" and token_data.sub == str(suscriptor_id):
+    if token_data.role == "admin":
+        return True
+    if token_data.role == "empresa" and str(token_data.sub).lower() == str(suscriptor_id).lower():
         return True
     elif token_data.role == "operator":
-        user = db.query(CuentaUsuario).filter(CuentaUsuario.id == UUID(token_data.sub)).first()
-        if user and user.suscriptor_id == suscriptor_id:
-            return True
+        try:
+            op_uuid = UUID(token_data.sub) if isinstance(token_data.sub, str) else token_data.sub
+            user = db.query(CuentaUsuario).filter(CuentaUsuario.id == op_uuid).first()
+            if user and user.suscriptor_id and str(user.suscriptor_id).lower() == str(suscriptor_id).lower():
+                return True
+        except Exception:
+            pass
     return False
 
 
@@ -99,15 +105,22 @@ def require_acceso_suscriptor_activo(
     token_data: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> TokenData:
-    """Permite acceso si la empresa asociada tiene suscripción activa"""
+    """Permite acceso si la empresa asociada tiene suscripción activa o si es admin"""
+    if token_data.role == "admin":
+        return token_data
+
     suscriptor_id = None
 
     if token_data.role == "empresa":
         suscriptor_id = token_data.sub
     elif token_data.role == "operator":
-        user = db.query(CuentaUsuario).filter(CuentaUsuario.id == UUID(token_data.sub)).first()
-        if user:
-            suscriptor_id = str(user.suscriptor_id)
+        try:
+            op_uuid = UUID(token_data.sub) if isinstance(token_data.sub, str) else token_data.sub
+            user = db.query(CuentaUsuario).filter(CuentaUsuario.id == op_uuid).first()
+            if user and user.suscriptor_id:
+                suscriptor_id = str(user.suscriptor_id)
+        except Exception:
+            pass
 
     if not suscriptor_id:
         raise HTTPException(
@@ -115,7 +128,12 @@ def require_acceso_suscriptor_activo(
             detail="No se encontró el suscriptor asociado al usuario"
         )
 
-    suscriptor = db.query(Suscriptor).filter_by(id=suscriptor_id).first()
+    try:
+        s_uuid = UUID(suscriptor_id) if isinstance(suscriptor_id, str) else suscriptor_id
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID de suscriptor inválido")
+
+    suscriptor = db.query(Suscriptor).filter_by(id=s_uuid).first()
     if not suscriptor or suscriptor.estado != "activo":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
