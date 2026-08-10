@@ -114,44 +114,55 @@ def obtener_suscripcion_actual(
     token_data: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    suscriptor_id = token_data.sub
-    if token_data.role == "operator":
-        user = db.query(CuentaUsuario).filter(CuentaUsuario.id == token_data.sub).first()
-        if user and user.suscriptor_id:
-            suscriptor_id = str(user.suscriptor_id)
+    try:
+        sub_uuid = uuid.UUID(token_data.sub)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID de token o usuario inválido")
 
-    suscripcion = (
-        db.query(SuscripcionSuscriptor)
-        .filter_by(suscriptor_id=suscriptor_id, estado="activo")
-        .order_by(SuscripcionSuscriptor.inicia_en.desc())
-        .first()
-    )
-    if not suscripcion:
+    target_suscriptor_id = sub_uuid
+
+    if token_data.role == "operator":
+        user = db.query(CuentaUsuario).filter(CuentaUsuario.id == sub_uuid).first()
+        if user and user.suscriptor_id:
+            target_suscriptor_id = user.suscriptor_id
+
+    try:
         suscripcion = (
             db.query(SuscripcionSuscriptor)
-            .filter_by(suscriptor_id=suscriptor_id)
+            .filter_by(suscriptor_id=target_suscriptor_id, estado="activo")
             .order_by(SuscripcionSuscriptor.inicia_en.desc())
             .first()
         )
-    
-    if not suscripcion:
-        return None
+        if not suscripcion:
+            suscripcion = (
+                db.query(SuscripcionSuscriptor)
+                .filter_by(suscriptor_id=target_suscriptor_id)
+                .order_by(SuscripcionSuscriptor.inicia_en.desc())
+                .first()
+            )
+        
+        if not suscripcion:
+            return None
 
-    return {
-        "id": suscripcion.id,
-        "suscriptor_id": suscripcion.suscriptor_id,
-        "plan_id": suscripcion.plan_id,
-        "estado": suscripcion.estado,
-        "inicia_en": suscripcion.inicia_en,
-        "fin_en": suscripcion.fin_en,
-        "plan": {
-            "id": suscripcion.plan.id,
-            "nombre": suscripcion.plan.nombre,
-            "precio_mensual": suscripcion.plan.precio_mensual,
-            "descripcion": suscripcion.plan.descripcion,
-            "caracteristicas": getattr(suscripcion.plan, "caracteristicas", "")
-        } if suscripcion.plan else None
-    }
+        return {
+            "id": str(suscripcion.id),
+            "suscriptor_id": str(suscripcion.suscriptor_id),
+            "plan_id": suscripcion.plan_id,
+            "estado": suscripcion.estado,
+            "inicia_en": suscripcion.inicia_en,
+            "expira_en": suscripcion.expira_en,
+            "plan": {
+                "id": suscripcion.plan.id,
+                "nombre": suscripcion.plan.nombre,
+                "precio_mensual": float(suscripcion.plan.precio_mensual) if suscripcion.plan and suscripcion.plan.precio_mensual is not None else 0.0,
+                "descripcion": suscripcion.plan.descripcion if suscripcion.plan else "",
+                "caracteristicas": getattr(suscripcion.plan, "caracteristicas", "") if suscripcion.plan else ""
+            } if suscripcion.plan else None
+        }
+    except Exception as e:
+        import traceback
+        print(f"Error consultando suscripción actual: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error consultando suscripción actual: {str(e)}")
 
 @router.get(
     "/suscripciones",
