@@ -167,3 +167,116 @@ def get_campana_full_detail(db: Session, campana_id: UUID) -> Optional[CampanaEn
         campana.total_pendientes = campana.total_entregas - campana.total_respondidas
 
     return campana
+
+
+async def procesar_campanas_programadas(db: Session) -> dict:
+    """
+    Procesa el envío automático de correos de campañas programadas
+    cuya fecha 'programada_en' sea menor o igual a la hora actual (<= now()).
+    Es idempotente y retorna un resumen JSON con el resultado.
+    """
+    from datetime import datetime, timezone
+    from app.services.email_service import enviar_email
+    from app.services.entregas_service import _generar_url_encuesta
+    from app.models.suscriptor import Suscriptor
+
+    now_utc = datetime.now(timezone.utc)
+
+    # 1. Buscar campañas programadas cuya fecha sea <= now()
+    campanas_programadas = (
+        db.query(CampanaEncuesta)
+        .options(
+            joinedload(CampanaEncuesta.entregas).joinedload(EntregaEncuesta.destinatario)
+        )
+        .filter(
+            CampanaEncuesta.estado_id == ESTADO_PROGRAMADA,
+            CampanaEncuesta.programada_en.isnot(None),
+            CampanaEncuesta.programada_en <= now_utc
+        )
+        .all()
+    )
+
+    total_procesadas = len(campanas_programadas)
+    enviados = 0
+    fallidos = 0
+    omitidos = 0
+    campanas_actualizadas = 0
+    detalles = []
+
+    for campana in campanas_programadas:
+        suscriptor = db.get(Suscriptor, campana.suscriptor_id)
+        nombre_empresa = suscriptor.nombre if suscriptor else "SurveySaaS"
+        
+        entregas_pendientes = [
+            e for e in campana.entregas 
+            if e.estado_id == ESTADO_PENDIENTE
+        ]
+
+        if not entregas_pendientes:
+            campana.estado_id = ESTADO_ENVIADA
+            db.commit()
+            campanas_actualizadas += 1
+            continue
+
+        campana_enviados = 0
+        campana_fallidos = 0
+        campana_omitidos = 0
+
+        for entrega in entregas_pendientes:
+            if entrega.canal_id != 1 or not entrega.destinatario or not entrega.destinatario.email:
+                omitidos += 1
+                campana_omitidos += 1
+                continue
+
+            try:
+                url_encuesta = _generar_url_encuesta(entrega.id)
+                exito = await enviar_email(
+                    destinatario_email=entrega.destinatario.email,
+                    destinatario_nombre=entrega.destinatario.nombre or "Estimado/a",
+                    asunto=f"Te invitamos a responder una encuesta: {campana.nombre}",
+                    nombre_campana=campana.nombre,
+                    nombre_empresa=nombre_empresa,
+                    url_encuesta=url_encuesta,
+                )
+
+                if exito:
+                    entrega.estado_id = ESTADO_ENVIADO
+                    entrega.enviado_en = datetime.now(timezone.utc)
+                    enviados += 1
+                    campana_enviados += 1
+                else:
+                    entrega.estado_id = ESTADO_FALLIDO
+                    fallidos += 1
+                    campana_fallidos += 1
+            except Exception:
+                entrega.estado_id = ESTADO_FALLIDO
+                fallidos += 1
+                campana_fallidos += 1
+
+        db.commit()
+
+        # Verificar si todas las entregas se procesaron
+        db.refresh(campana)
+        pendientes_restantes = sum(1 for e in campana.entregas if e.estado_id == ESTADO_PENDIENTE)
+        if pendientes_restantes == 0:
+            campana.estado_id = ESTADO_ENVIADA
+            db.commit()
+            campanas_actualizadas += 1
+
+        detalles.append({
+            "campana_id": str(campana.id),
+            "nombre": campana.nombre,
+            "enviados": campana_enviados,
+            "fallidos": campana_fallidos,
+            "omitidos": campana_omitidos,
+            "estado_final_id": campana.estado_id
+        })
+
+    return {
+        "total_campanas_procesadas": total_procesadas,
+        "enviados": enviados,
+        "fallidos": fallidos,
+        "omitidos": omitidos,
+        "campanas_actualizadas": campanas_actualizadas,
+        "detalles": detalles
+    }

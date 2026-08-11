@@ -11,7 +11,7 @@ from app.schemas.auth import TokenData
 from app.schemas.campanas_schema import CampanaCreate, CampanaOut, CampanaUpdate, CampanaDetailOut, CampanaFullDetailOut
 from app.services.campanas_service import (
     create_campana, get_campana, list_campanas, update_campana, delete_campana,
-    get_campana_full_detail,
+    get_campana_full_detail, procesar_campanas_programadas,
     ESTADO_BORRADOR, ESTADO_PROGRAMADA, ESTADO_ENVIADA, ESTADO_CERRADA
 )
 
@@ -19,6 +19,17 @@ router = APIRouter(
     prefix="/campanas",
     tags=["Campañas"]
 )
+
+@router.post("/procesar-programadas")
+async def procesar_campanas_programadas_endpoint(
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para procesar el envío automático de correos de campañas programadas
+    cuya fecha programada_en sea menor o igual a la hora actual (<= now()).
+    Es idempotente y no requiere parámetros requeridos.
+    """
+    return await procesar_campanas_programadas(db)
 
 @router.post("", response_model=CampanaOut, status_code=status.HTTP_201_CREATED)
 async def create_campana_endpoint(
