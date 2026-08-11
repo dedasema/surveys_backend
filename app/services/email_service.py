@@ -5,6 +5,7 @@ except Exception:
 
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.header import Header
 import logging
 import asyncio
 import smtplib
@@ -122,7 +123,7 @@ async def _send_mail(
     try:
         clean_password = settings.SMTP_PASSWORD.replace(" ", "").strip()
         message = MIMEMultipart("alternative")
-        message["Subject"] = asunto
+        message["Subject"] = Header(asunto, "utf-8")
         message["From"] = f"{settings.SMTP_USERNAME}"
         message["To"] = f"{destinatario_nombre} <{destinatario_email}>"
         message.attach(MIMEText(text_content, "plain"))

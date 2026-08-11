@@ -229,7 +229,7 @@ async def procesar_campanas_programadas(db: Session) -> dict:
                 try:
                     url_encuesta = _generar_url_encuesta(entrega.id)
                     asunto = (
-                        f"🎙️ Te invitamos a responder nuestra encuesta por voz: {campana.nombre}"
+                        f"[Encuesta por Voz] Te invitamos a responder: {campana.nombre}"
                         if canal_actual == 5
                         else f"Te invitamos a responder una encuesta: {campana.nombre}"
                     )
