@@ -58,6 +58,8 @@ def _build_pdf(entrega: EntregaEncuesta, preguntas: List[PreguntaEncuesta]) -> i
 
 @router.get("/{entrega_id}/formulario.pdf")
 async def pdf_por_entrega(entrega_id: UUID, db: Session = Depends(get_db)):
+    if Canvas is None or qrcode is None:
+        raise HTTPException(500, "Módulos de generación PDF no disponibles. Contacte al administrador.")
     ent = (
         db.query(EntregaEncuesta)
         .options(joinedload(EntregaEncuesta.campana))
@@ -114,6 +116,8 @@ async def pdf_bulk(campana_id: UUID, db: Session = Depends(get_db)):
 
 @router.get("/campanas/{campana_id}/formularios.pdf")
 async def pdf_combined(campana_id: UUID, db: Session = Depends(get_db)):
+    if Canvas is None or qrcode is None:
+        raise HTTPException(500, "Módulos de generación PDF no disponibles. Contacte al administrador.")
     entregas = (
         db.query(EntregaEncuesta)
         .options(joinedload(EntregaEncuesta.campana))
