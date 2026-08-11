@@ -190,3 +190,51 @@ async def responder_encuesta(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error procesando las respuestas: {str(e)}"
         )
+
+
+class InterpretacionVozRequest(BaseModel):
+    pregunta_id: UUID
+    transcripcion: str
+
+
+@router.post("/interpretar-voz")
+async def interpretar_voz_endpoint(
+    payload: InterpretacionVozRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Interpreta con Gemini la transcripción de voz del usuario para una pregunta.
+    Devuelve la opción matcheada (opcion_id) o el texto limpio.
+    """
+    import json
+    import re
+    from sqlalchemy.orm import joinedload
+    from app.models.survey import PreguntaEncuesta
+    from app.services.gemini_service import call_gemini_text
+
+    pregunta = db.query(PreguntaEncuesta).options(joinedload(PreguntaEncuesta.opciones)).filter(PreguntaEncuesta.id == payload.pregunta_id).first()
+    if not pregunta:
+        raise HTTPException(status_code=404, detail="Pregunta no encontrada")
+
+    if pregunta.tipo_pregunta_id in (3, 4) and pregunta.opciones:
+        opciones_map = {str(o.id): o.texto for o in pregunta.opciones}
+        prompt = (
+            f"Dada la pregunta '{pregunta.texto}' y las siguientes opciones válidas:\n"
+            f"{json.dumps(opciones_map, ensure_ascii=False)}\n\n"
+            f"El usuario respondió por voz: '{payload.transcripcion}'.\n"
+            "Identifica cuál opción eligió el usuario. Devuelve ÚNICAMENTE un objeto JSON con la estructura:\n"
+            "{\"opcion_id\": \"UUID_ELEGIDO\" o null, \"texto_limpio\": \"TEXTO\"}"
+        )
+        try:
+            raw = await call_gemini_text(prompt, "Responde únicamente JSON válido.")
+            cleaned = re.sub(r"^```json\s*", "", raw.strip(), flags=re.IGNORECASE)
+            cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.IGNORECASE)
+            return json.loads(cleaned)
+        except Exception:
+            for op in pregunta.opciones:
+                if op.texto.lower() in payload.transcripcion.lower():
+                    return {"opcion_id": str(op.id), "texto_limpio": op.texto}
+            return {"opcion_id": None, "texto_limpio": payload.transcripcion}
+
+    return {"opcion_id": None, "texto_limpio": payload.transcripcion}
