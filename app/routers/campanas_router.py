@@ -32,6 +32,7 @@ async def procesar_campanas_programadas_endpoint(
     return await procesar_campanas_programadas(db)
 
 @router.api_route("/{campana_id}/disparar", methods=["GET", "POST"])
+@router.api_route("/{campana_id}/dispara", methods=["GET", "POST"])
 async def disparar_campana_inmediata_endpoint(
     campana_id: UUID,
     db: Session = Depends(get_db)
