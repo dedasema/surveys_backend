@@ -223,35 +223,42 @@ async def procesar_campanas_programadas(db: Session) -> dict:
         campana_omitidos = 0
 
         for entrega in entregas_pendientes:
-            if entrega.canal_id != 1 or not entrega.destinatario or not entrega.destinatario.email:
-                omitidos += 1
-                campana_omitidos += 1
-                continue
+            # Procesar canal 1 (Email) y canal 5 (Audio / Voz Web)
+            canal_actual = entrega.canal_id if entrega.canal_id else campana.canal_id
+            if canal_actual in (1, 5) and entrega.destinatario and entrega.destinatario.email:
+                try:
+                    url_encuesta = _generar_url_encuesta(entrega.id)
+                    asunto = (
+                        f"🎙️ Te invitamos a responder nuestra encuesta por voz: {campana.nombre}"
+                        if canal_actual == 5
+                        else f"Te invitamos a responder una encuesta: {campana.nombre}"
+                    )
+                    exito = await enviar_email(
+                        destinatario_email=entrega.destinatario.email,
+                        destinatario_nombre=entrega.destinatario.nombre or "Estimado/a",
+                        asunto=asunto,
+                        nombre_campana=campana.nombre,
+                        nombre_empresa=nombre_empresa,
+                        url_encuesta=url_encuesta,
+                    )
 
-            try:
-                url_encuesta = _generar_url_encuesta(entrega.id)
-                exito = await enviar_email(
-                    destinatario_email=entrega.destinatario.email,
-                    destinatario_nombre=entrega.destinatario.nombre or "Estimado/a",
-                    asunto=f"Te invitamos a responder una encuesta: {campana.nombre}",
-                    nombre_campana=campana.nombre,
-                    nombre_empresa=nombre_empresa,
-                    url_encuesta=url_encuesta,
-                )
-
-                if exito:
-                    entrega.estado_id = ESTADO_ENVIADO
-                    entrega.enviado_en = datetime.now(timezone.utc)
-                    enviados += 1
-                    campana_enviados += 1
-                else:
+                    if exito:
+                        entrega.estado_id = ESTADO_ENVIADO
+                        entrega.enviado_en = datetime.now(timezone.utc)
+                        enviados += 1
+                        campana_enviados += 1
+                    else:
+                        entrega.estado_id = ESTADO_FALLIDO
+                        fallidos += 1
+                        campana_fallidos += 1
+                except Exception:
                     entrega.estado_id = ESTADO_FALLIDO
                     fallidos += 1
                     campana_fallidos += 1
-            except Exception:
-                entrega.estado_id = ESTADO_FALLIDO
-                fallidos += 1
-                campana_fallidos += 1
+            else:
+                omitidos += 1
+                campana_omitidos += 1
+                continue
 
         db.commit()
 
