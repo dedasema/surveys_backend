@@ -47,37 +47,41 @@ async def _send_first_question(db: Session, entrega_id: UUID, chat_id: str) -> N
     if not pregunta:
         raise ValueError("No se pudo obtener la primera pregunta")
 
-    if pregunta.tipo_pregunta_id == 3:  # selección única
-        await ws.send_list(chat_id, pregunta.texto, [o.texto for o in pregunta.opciones])
+    if pregunta.tipo_pregunta_id == 3 and pregunta.opciones:  # selección única
+        opciones_txt = "\n".join([f"{i+1}. {o.texto}" for i, o in enumerate(pregunta.opciones)])
+        msg = f"*{pregunta.texto}*\n\n{opciones_txt}\n\n_Responde con el número o texto de tu opción._"
+        res = await ws.send_text(chat_id, msg)
+        if not res.get("success"):
+            await ws.send_list(chat_id, pregunta.texto, [o.texto for o in pregunta.opciones])
 
     elif pregunta.tipo_pregunta_id == 4:  # multiselección
         await ws.send_text(chat_id, _render_multiselect_text(pregunta))
 
     else:  # texto / numérico
-        await ws.send_text(chat_id, pregunta.texto)
+        await ws.send_text(chat_id, f"*{pregunta.texto}*")
 
 
 async def _send_next(db: Session, res: Dict, chat_id: str) -> None:
-    """
-    Envía la siguiente pregunta.  El dict `res` viene de procesar_respuesta.
-    No se llama cuando res['retry'] es True.
-    """
     tp = res.get("tipo_pregunta")
 
-    if tp == 3:  # selección única
-        await ws.send_list(chat_id, res["siguiente_pregunta"], res["opciones"])
+    if tp == 3 and res.get("opciones"):  # selección única
+        opciones_txt = "\n".join([f"{i+1}. {o}" for i, o in enumerate(res["opciones"])])
+        msg = f"*{res['siguiente_pregunta']}*\n\n{opciones_txt}\n\n_Responde con el número o texto de tu opción._"
+        res_envio = await ws.send_text(chat_id, msg)
+        if not res_envio.get("success"):
+            await ws.send_list(chat_id, res["siguiente_pregunta"], res["opciones"])
 
     elif tp == 4:  # multiselección
         opciones = "\n".join(f"• {o}" for o in res["opciones"])
         await ws.send_text(
             chat_id,
-            f"{res['siguiente_pregunta']}\n\n"
+            f"*{res['siguiente_pregunta']}*\n\n"
             f"Opciones disponibles:\n{opciones}\n\n"
-            "Responde escribiendo las opciones que elijas (en cualquier orden).",
+            "Responde escribiendo las opciones que elijas.",
         )
 
     else:  # texto / numérico
-        await ws.send_text(chat_id, res["siguiente_pregunta"])
+        await ws.send_text(chat_id, f"*{res['siguiente_pregunta']}*")
 
 
 @router.get("/webhook")

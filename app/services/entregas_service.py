@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
+import re
 import jwt
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -167,11 +169,13 @@ def get_entrega_by_destinatario(
         .options(joinedload(EntregaEncuesta.conversacion))
     )
 
-    if email:
-        q = q.filter(Destinatario.email == email)
     if telefono:
-        t_clean = telefono.split("@")[0] if "@" in telefono else telefono
-        q = q.filter(Destinatario.telefono.contains(t_clean))
+        t_clean = re.sub(r"[^0-9]", "", telefono)
+        if len(t_clean) >= 8:
+            t_suffix = t_clean[-8:]
+            q = q.filter(or_(Destinatario.telefono.contains(t_clean), Destinatario.telefono.contains(t_suffix)))
+        else:
+            q = q.filter(Destinatario.telefono.contains(t_clean))
 
     return q.order_by(EntregaEncuesta.enviado_en.desc().nullslast()).first()
 
