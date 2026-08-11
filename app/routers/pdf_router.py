@@ -125,7 +125,22 @@ async def pdf_combined(campana_id: UUID, db: Session = Depends(get_db)):
         .all()
     )
     if not entregas:
-        raise HTTPException(404, "No hay entregas pendientes para esta campaña")
+        # Si no hay entregas pendientes, buscar cualquier entrega previa de la campaña
+        entregas = (
+            db.query(EntregaEncuesta)
+            .options(joinedload(EntregaEncuesta.campana))
+            .filter(EntregaEncuesta.campana_id == campana_id)
+            .order_by(EntregaEncuesta.id)
+            .all()
+        )
+        if not entregas:
+            # Si la campaña aún no tiene entregas, auto-crear 1 entrega por papel para generar el formulario PDF
+            from app.services.entregas_service import create_bulk_entregas_papel
+            from app.services.campanas_service import get_campana
+            campana = get_campana(db, campana_id)
+            if not campana:
+                raise HTTPException(404, "Campaña no encontrada")
+            entregas = create_bulk_entregas_papel(db, campana_id, 1)
 
     plantilla_id = entregas[0].campana.plantilla_id
     preguntas = (
