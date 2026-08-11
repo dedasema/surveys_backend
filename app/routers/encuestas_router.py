@@ -25,9 +25,11 @@ async def verificar_token(token: str, db: Session = Depends(get_db)):
     de la entrega si es válido
     """
     try:
-        # Decodificar el token
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        entrega_id = UUID(payload["sub"])
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            entrega_id = UUID(payload["sub"])
+        except Exception:
+            entrega_id = UUID(token)
         
         # Verificar que la entrega existe y está activa
         entrega = get_entrega_con_plantilla(db, entrega_id)
@@ -45,6 +47,9 @@ async def verificar_token(token: str, db: Session = Depends(get_db)):
             )
         
         # Devolver los datos necesarios para mostrar la encuesta
+        dest_nombre = entrega.destinatario.nombre if entrega.destinatario else "Entrega en Papel"
+        dest_email = entrega.destinatario.email if entrega.destinatario else "papel@surveysaas.local"
+
         return {
             "entrega_id": str(entrega.id),
             "campana": {
@@ -69,20 +74,15 @@ async def verificar_token(token: str, db: Session = Depends(get_db)):
                 } for pregunta in sorted(entrega.campana.plantilla.preguntas, key=lambda x: x.orden)]
             },
             "destinatario": {
-                "nombre": entrega.destinatario.nombre,
-                "email": entrega.destinatario.email
+                "nombre": dest_nombre,
+                "email": dest_email
             }
         }
         
-    except jwt.ExpiredSignatureError:
+    except (jwt.InvalidTokenError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="El enlace de la encuesta ha expirado"
-        )
-    except (jwt.InvalidTokenError, ValueError):  # Usar InvalidTokenError en lugar de JWTError
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido"
+            detail="Token o ID de entrega inválido"
         )
 
 @router.post("/responder/{token}")
@@ -95,9 +95,11 @@ async def responder_encuesta(
     Recibe y guarda las respuestas de una encuesta por email
     """
     try:
-        # Decodificar el token para obtener el ID de la entrega
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        entrega_id = UUID(payload["sub"])
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            entrega_id = UUID(payload["sub"])
+        except Exception:
+            entrega_id = UUID(token)
         
         # Verificar que la entrega existe y no ha sido respondida
         entrega = get_entrega_con_plantilla(db, entrega_id)
