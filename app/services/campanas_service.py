@@ -273,10 +273,10 @@ async def procesar_campanas_programadas(db: Session) -> dict:
         })
 
     return {
+        "status": "ok",
         "total_campanas_procesadas": total_procesadas,
         "enviados": enviados,
         "fallidos": fallidos,
         "omitidos": omitidos,
-        "campanas_actualizadas": campanas_actualizadas,
-        "detalles": detalles
+        "campanas_actualizadas": campanas_actualizadas
     }

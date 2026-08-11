@@ -20,14 +20,14 @@ router = APIRouter(
     tags=["Campañas"]
 )
 
-@router.post("/procesar-programadas")
+@router.api_route("/procesar-programadas", methods=["GET", "POST"])
+@router.api_route("/procesar-programada", methods=["GET", "POST"])
 async def procesar_campanas_programadas_endpoint(
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint para procesar el envío automático de correos de campañas programadas
-    cuya fecha programada_en sea menor o igual a la hora actual (<= now()).
-    Es idempotente y no requiere parámetros requeridos.
+    Endpoint para procesar el envío automático de correos de campañas programadas.
+    Acepta GET y POST, e URLs en singular o plural para flexibilidad total con cronjobs.
     """
     return await procesar_campanas_programadas(db)
 
