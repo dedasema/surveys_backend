@@ -285,15 +285,18 @@ async def procesar_campanas_programadas(db: Session) -> dict:
                         enviados += 1
                         campana_enviados += 1
                     else:
-                        logger.error("Error enviando WhatsApp a %s: %s", num_tel, res_wa.get("error"))
+                        err_detail = res_wa.get("error") or "Error en Meta Cloud API"
+                        logger.error("Error enviando WhatsApp a %s: %s", num_tel, err_detail)
                         entrega.estado_id = ESTADO_FALLIDO
                         fallidos += 1
                         campana_fallidos += 1
+                        detalles.append({"entrega_id": str(entrega.id), "telefono": num_tel, "error": err_detail})
                 except Exception as exc:
                     logger.error("Excepción enviando WhatsApp a %s: %s", entrega.destinatario.telefono, exc)
                     entrega.estado_id = ESTADO_FALLIDO
                     fallidos += 1
                     campana_fallidos += 1
+                    detalles.append({"entrega_id": str(entrega.id), "error": str(exc)})
             else:
                 omitidos += 1
                 campana_omitidos += 1
