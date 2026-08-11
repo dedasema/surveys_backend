@@ -20,7 +20,7 @@ def _get_dashboard_service():
     global _dashboard_service
     if _dashboard_service is None:
         from app.services.dashboard_service import DashboardService
-        _dashboard_service = DashboardService(settings.OPENAI_API_KEY)
+        _dashboard_service = DashboardService()
     return _dashboard_service
 
 @router.get("/campaigns/{campaign_id}/analysis")
