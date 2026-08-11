@@ -223,8 +223,9 @@ async def procesar_campanas_programadas(db: Session) -> dict:
         campana_omitidos = 0
 
         for entrega in entregas_pendientes:
-            # Procesar canal 1 (Email) y canal 5 (Audio / Voz Web)
             canal_actual = entrega.canal_id if entrega.canal_id else campana.canal_id
+
+            # Canal 1 (Email) y Canal 5 (Audio / Voz Web)
             if canal_actual in (1, 5) and entrega.destinatario and entrega.destinatario.email:
                 try:
                     url_encuesta = _generar_url_encuesta(entrega.id)
@@ -252,6 +253,34 @@ async def procesar_campanas_programadas(db: Session) -> dict:
                         fallidos += 1
                         campana_fallidos += 1
                 except Exception:
+                    entrega.estado_id = ESTADO_FALLIDO
+                    fallidos += 1
+                    campana_fallidos += 1
+
+            # Canal 2 (WhatsApp)
+            elif canal_actual == 2 and entrega.destinatario and entrega.destinatario.telefono:
+                try:
+                    from app.services import whatsapp_service as ws
+                    num_tel = entrega.destinatario.telefono
+                    nombre_dest = entrega.destinatario.nombre or "Estimado/a"
+                    msg_texto = (
+                        f"¡Hola {nombre_dest}! 👋\n"
+                        f"Te invitamos a responder la encuesta: *{campana.nombre}*.\n\n"
+                        "¿Tienes 1 minuto para responder ahora? Responde *Sí* para comenzar o *No* para más tarde."
+                    )
+                    res_wa = await ws.send_confirm(num_tel, msg_texto)
+                    if res_wa.get("success"):
+                        entrega.estado_id = ESTADO_ENVIADO
+                        entrega.enviado_en = datetime.now(timezone.utc)
+                        enviados += 1
+                        campana_enviados += 1
+                    else:
+                        logger.error("Error enviando WhatsApp a %s: %s", num_tel, res_wa.get("error"))
+                        entrega.estado_id = ESTADO_FALLIDO
+                        fallidos += 1
+                        campana_fallidos += 1
+                except Exception as exc:
+                    logger.error("Excepción enviando WhatsApp a %s: %s", entrega.destinatario.telefono, exc)
                     entrega.estado_id = ESTADO_FALLIDO
                     fallidos += 1
                     campana_fallidos += 1
