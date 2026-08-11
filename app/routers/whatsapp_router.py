@@ -106,11 +106,6 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     payload = json.loads((await request.body()).decode())
     data = parse_webhook(payload)
 
-    if payload.get("hubVerificationToken"):
-        if payload["hubVerificationToken"] == settings.WHAPI_TOKEN:
-            return {"success": True, "message": "Webhook verified"}
-        raise HTTPException(status_code=403, detail="Invalid verification token")
-
     if data["kind"] in ("status", "own", "non_text", "unknown"):
         return {"success": True, "message": f"Ignored {data['kind']}"}
 
@@ -123,78 +118,53 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     payload_id = data.get("payload_id", "")
     chat_id = f"{numero}@c.us"
 
-    estado = conversaciones_estado.get(chat_id, "esperando_confirmacion")
-    logger.info("Mensaje de %s | estado=%s | %s", numero, estado, texto)
-
     entrega: EntregaEncuesta | None = get_entrega_by_destinatario(db, telefono=numero)
     if not entrega or entrega.estado_id == 3:  # respondido
         await ws.send_text(chat_id, "No tengo encuestas pendientes para este número 😊")
         return {"success": True, "message": "No pending delivery"}
 
-    if estado == "esperando_confirmacion":
+    # Conversación desde PostgreSQL (Persistente ante reinicios)
+    conv = entrega.conversacion[0] if entrega.conversacion else None
+
+    # Caso A: Aún no inició la conversación (Esperando confirmación)
+    if not conv:
         normalized = texto.lower().replace("í", "i")
-        confirmado = normalized in ("si", "yes", "ok") or payload_id == "btn_si"
+        confirmado = normalized in ("si", "yes", "ok", "iniciar", "1") or payload_id == "btn_si"
         rechazado = normalized in ("no", "nop") or payload_id == "btn_no"
 
         if confirmado:
             await _send_first_question(db, entrega.id, chat_id)
-            conversaciones_estado[chat_id] = "encuesta_en_progreso"
             return {"success": True, "message": "Survey started"}
 
         if rechazado:
             await ws.send_text(chat_id, "Entendido. Cuando desees empezar escribe INICIAR.")
             return {"success": True, "message": "Survey declined"}
 
-        # cualquier otra cosa
+        # Si mandó cualquier otra palabra antes de confirmar
         await ws.send_confirm(
             chat_id,
             "Responde 'Sí' para comenzar la encuesta ahora o 'No' para más tarde.",
         )
         return {"success": True, "message": "Confirmation requested"}
 
-    if estado == "encuesta_en_progreso":
-        try:
-            conv = (
-                entrega.conversacion[0]
-                if entrega.conversacion
-                else await iniciar_conversacion_whatsapp(db, entrega.id)
-            )
+    # Caso B: Encuesta en progreso (Persistente)
+    if conv.completada:
+        await ws.send_text(chat_id, "¡Ya has completado esta encuesta! Muchas gracias por tus respuestas. 🙏")
+        return {"success": True, "message": "Survey already completed"}
 
-            resultado = await procesar_respuesta(db, conv.id, texto)
+    res = await procesar_respuesta(db, conv.id, texto)
 
-            if resultado.get("retry"):
-                await ws.send_text(chat_id, resultado["mensaje"])
-                return {"success": True, "message": "Clarification requested"}
+    if res.get("retry"):
+        await ws.send_text(chat_id, res["mensaje"])
+        return {"success": True, "message": "Retry requested"}
 
-            if "error" in resultado:
-                await ws.send_text(chat_id, resultado["error"])
-                return {"success": True, "message": "Invalid answer"}
+    if res.get("completada"):
+        mark_as_responded(db, entrega.id)
+        await ws.send_text(chat_id, "¡Muchas gracias! Has completado la encuesta exitosamente. 🎉")
+        return {"success": True, "message": "Survey completed"}
 
-            if resultado.get("completada"):
-                conversaciones_estado.pop(chat_id, None)
-                await ws.send_text(chat_id, "¡Gracias por completar la encuesta! 😊")
-                return {"success": True, "message": "Survey finished"}
-
-            await _send_next(db, resultado, chat_id)
-            return {"success": True, "message": "Next question sent"}
-
-        except Exception:
-            logger.error("ERROR procesando respuesta", exc_info=True)
-            await ws.send_text(chat_id, "Ocurrió un error. Escribe INICIAR para reiniciar.")
-            return {"success": False, "error": "exception"}
-
-    if texto.upper() == "INICIAR":
-        conversaciones_estado[chat_id] = "esperando_confirmacion"
-        nombre = entrega.destinatario.nombre or "Hola"
-        await ws.send_confirm(
-            chat_id,
-            f"{nombre}, ¿deseas comenzar la encuesta '{entrega.campana.nombre}' ahora?",
-        )
-        return {"success": True, "message": "Confirmation requested"}
-
-    await ws.send_text(chat_id, "Para iniciar o continuar la encuesta escribe INICIAR.")
-    conversaciones_estado[chat_id] = "esperando_confirmacion"
-    return {"success": True, "message": "State reset"}
+    await _send_next(db, res, chat_id)
+    return {"success": True, "message": "Next question sent"}
 
 
 
