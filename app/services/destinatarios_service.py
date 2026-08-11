@@ -1,13 +1,20 @@
+import io
+import csv
 from typing import List, Optional, Dict
+
+try:
+    import openpyxl
+except Exception:
+    openpyxl = None  # type: ignore
 
 try:
     import pandas as pd
 except Exception:
     pd = None  # type: ignore
 
-
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from uuid import UUID
 
 from app.models.survey import Destinatario
@@ -71,69 +78,132 @@ async def process_excel_destinatarios(
     suscriptor_id: UUID
 ) -> Dict[str, int]:
     """
-    Procesa un archivo Excel con destinatarios y los crea en la base de datos.
+    Procesa un archivo Excel (.xlsx, .xls) o CSV (.csv) con destinatarios y los crea en la base de datos.
     Retorna estadísticas del proceso.
     """
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    filename = file.filename.lower() if file.filename else ""
+    if not (filename.endswith('.xlsx') or filename.endswith('.xls') or filename.endswith('.csv')):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo debe ser un Excel (.xlsx o .xls)"
+            detail="El archivo debe ser un Excel (.xlsx, .xls) o CSV (.csv)"
         )
 
     try:
-        # Leer el Excel
-        df = pd.read_excel(file.file)
-        
-        # Validar columnas requeridas
-        required_columns = {'nombre', 'email', 'telefono'}
-        if not required_columns.issubset(df.columns):
+        contents = await file.read()
+        rows: List[Dict[str, str]] = []
+
+        # 1. Si es archivo CSV
+        if filename.endswith('.csv'):
+            try:
+                text = contents.decode('utf-8-sig', errors='replace')
+                reader = csv.DictReader(io.StringIO(text))
+                for row in reader:
+                    normalized = {str(k).strip().lower(): str(v).strip() for k, v in row.items() if k}
+                    rows.append(normalized)
+            except Exception as csv_err:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Error leyendo archivo CSV: {str(csv_err)}"
+                )
+
+        # 2. Si es Excel y openpyxl está disponible
+        elif openpyxl is not None and (filename.endswith('.xlsx') or filename.endswith('.xls')):
+            try:
+                wb = openpyxl.load_workbook(filename=io.BytesIO(contents), data_only=True)
+                sheet = wb.active
+                headers = [str(cell.value).strip().lower() if cell.value is not None else "" for cell in sheet[1]]
+                
+                for row_cells in sheet.iter_rows(min_row=2, values_only=True):
+                    if not any(row_cells):
+                        continue
+                    row_dict = {}
+                    for idx, val in enumerate(row_cells):
+                        if idx < len(headers) and headers[idx]:
+                            row_dict[headers[idx]] = str(val).strip() if val is not None else ""
+                    rows.append(row_dict)
+            except Exception as openpyxl_err:
+                if pd is not None:
+                    try:
+                        df = pd.read_excel(io.BytesIO(contents))
+                        df.columns = [str(col).strip().lower() for col in df.columns]
+                        rows = df.to_dict(orient='records')
+                    except Exception as pd_err:
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error leyendo Excel: {str(pd_err)}")
+                else:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error leyendo Excel con openpyxl: {str(openpyxl_err)}")
+
+        # 3. Fallback a Pandas
+        elif pd is not None:
+            try:
+                df = pd.read_excel(io.BytesIO(contents))
+                df.columns = [str(col).strip().lower() for col in df.columns]
+                rows = df.to_dict(orient='records')
+            except Exception as pd_err:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error procesando Excel: {str(pd_err)}")
+        else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"El Excel debe contener las columnas: {required_columns}"
+                detail="No se encontró una librería para leer Excel (openpyxl/pandas). Por favor sube un archivo CSV."
             )
 
-        # Inicializar contadores
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El archivo no contiene filas de datos válidas."
+            )
+
+        # Validar columnas (soporta nombre/name, email, telefono/phone)
         total = 0
         creados = 0
         duplicados = 0
         errores = 0
 
-        # Procesar cada fila
-        for _, row in df.iterrows():
+        for row in rows:
             total += 1
             try:
+                nombre = str(row.get('nombre') or row.get('name') or '').strip()
+                email = str(row.get('email') or '').strip() or None
+                telefono = str(row.get('telefono') or row.get('phone') or '').strip() or None
+
+                if not nombre and not email and not telefono:
+                    continue
+                if not nombre:
+                    nombre = email or telefono or "Sin Nombre"
+
                 # Verificar si ya existe por email o teléfono
-                existing = (
-                    db.query(Destinatario)
-                    .filter(
-                        Destinatario.suscriptor_id == suscriptor_id,
-                        (
-                            (Destinatario.email == row['email']) |
-                            (Destinatario.telefono == str(row['telefono']))
+                filters = []
+                if email:
+                    filters.append(Destinatario.email == email)
+                if telefono:
+                    filters.append(Destinatario.telefono == telefono)
+
+                existing = None
+                if filters:
+                    existing = (
+                        db.query(Destinatario)
+                        .filter(
+                            Destinatario.suscriptor_id == suscriptor_id,
+                            or_(*filters)
                         )
+                        .first()
                     )
-                    .first()
-                )
 
                 if existing:
                     duplicados += 1
                     continue
 
-                # Crear nuevo destinatario
                 destinatario = Destinatario(
                     suscriptor_id=suscriptor_id,
-                    nombre=row['nombre'],
-                    email=row['email'] if pd.notna(row['email']) else None,
-                    telefono=str(row['telefono']) if pd.notna(row['telefono']) else None
+                    nombre=nombre,
+                    email=email,
+                    telefono=telefono
                 )
                 db.add(destinatario)
                 creados += 1
-
-            except Exception as e:
+            except Exception:
                 errores += 1
                 continue
 
-        # Commit al final para mejor rendimiento
         db.commit()
 
         return {
@@ -143,10 +213,15 @@ async def process_excel_destinatarios(
             "errores": errores
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error procesando el archivo: {str(e)}"
         )
     finally:
-        file.file.close()
+        try:
+            file.file.close()
+        except Exception:
+            pass
