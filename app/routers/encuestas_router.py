@@ -4,6 +4,7 @@ from uuid import UUID
 import jwt
 from datetime import datetime
 from typing import Dict, List
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.config import settings
