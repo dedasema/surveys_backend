@@ -31,6 +31,23 @@ async def procesar_campanas_programadas_endpoint(
     """
     return await procesar_campanas_programadas(db)
 
+@router.api_route("/{campana_id}/disparar", methods=["GET", "POST"])
+async def disparar_campana_inmediata_endpoint(
+    campana_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Dispara de inmediato el envío de todas las entregas pendientes de una campaña específica.
+    """
+    campana = get_campana(db, campana_id)
+    if not campana:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+    
+    campana.estado_id = ESTADO_PROGRAMADA
+    db.commit()
+
+    return await procesar_campanas_programadas(db)
+
 @router.post("", response_model=CampanaOut, status_code=status.HTTP_201_CREATED)
 async def create_campana_endpoint(
     payload: CampanaCreate,

@@ -180,18 +180,28 @@ async def procesar_campanas_programadas(db: Session) -> dict:
     from app.services.entregas_service import _generar_url_encuesta
     from app.models.suscriptor import Suscriptor
 
-    now_utc = datetime.now(timezone.utc)
+    from sqlalchemy import or_
 
-    # 1. Buscar campañas programadas cuya fecha sea <= now()
+    now_utc = datetime.now(timezone.utc)
+    now_naive = datetime.utcnow()
+
+    # 1. Buscar campañas programadas o con entregas pendientes
     campanas_programadas = (
         db.query(CampanaEncuesta)
         .options(
             joinedload(CampanaEncuesta.entregas).joinedload(EntregaEncuesta.destinatario)
         )
         .filter(
-            CampanaEncuesta.estado_id == ESTADO_PROGRAMADA,
-            CampanaEncuesta.programada_en.isnot(None),
-            CampanaEncuesta.programada_en <= now_utc
+            or_(
+                CampanaEncuesta.estado_id == ESTADO_PROGRAMADA,
+                CampanaEncuesta.estado_id == 1,
+                CampanaEncuesta.estado_id == 2
+            ),
+            or_(
+                CampanaEncuesta.programada_en.is_(None),
+                CampanaEncuesta.programada_en <= now_utc,
+                CampanaEncuesta.programada_en <= now_naive
+            )
         )
         .all()
     )
