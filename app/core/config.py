@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     WHAPI_TOKEN: Optional[str] = ""
     WHAPI_API_URL: str = "https://gate.whapi.cloud"
+    WHATSAPP_PHONE_ID: Optional[str] = ""
+    WHATSAPP_TOKEN: Optional[str] = ""
+    WHATSAPP_VERIFY_TOKEN: Optional[str] = "surveys_whatsapp_verify_token_2026"
     OPENAI_API_KEY: Optional[str] = ""
     GEMINI_API_KEY: Optional[str] = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"

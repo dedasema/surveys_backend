@@ -48,16 +48,35 @@ def _extract_text_and_payload(msg: Dict[str, Any]) -> Tuple[str, str]:
 
 def parse_webhook(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Normaliza el webhook de Whapi y clasifica el contenido.
-
-    Salida:
-        kind = "message" | "status" | "own" | "non_text" | "unknown" | "error"
-        + otros campos según corresponda.
-
-    Nunca lanza excepción: ante error ⇒ kind == "error".
+    Normaliza el webhook de Meta Cloud API y Whapi.
     """
     try:
-        # 0) Notificaciones de entrega/lectura
+        # 0.1 Meta Cloud API Structure
+        if "entry" in payload and payload["entry"]:
+            changes = payload["entry"][0].get("changes", [{}])
+            val = changes[0].get("value", {}) if changes else {}
+            if "messages" in val and val["messages"]:
+                msg = val["messages"][0]
+                from_num = msg.get("from", "")
+                text, payload_id = _extract_text_and_payload(msg)
+                return {
+                    "kind": "message",
+                    "from_number": from_num,
+                    "text": text or payload_id,
+                    "payload_id": payload_id,
+                    "message_id": msg.get("id"),
+                    "timestamp": msg.get("timestamp"),
+                    "interactive": msg.get("type") in ("button", "interactive", "reply"),
+                    "raw": payload,
+                }
+            if "statuses" in val:
+                return {
+                    "kind": "status",
+                    "status": val.get("statuses", [{}])[0],
+                    "raw": payload,
+                }
+
+        # 0.2 Whapi Notifications
         if "statuses" in payload:
             return {
                 "kind": "status",

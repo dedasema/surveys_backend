@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -78,6 +78,22 @@ async def _send_next(db: Session, res: Dict, chat_id: str) -> None:
 
     else:  # texto / numérico
         await ws.send_text(chat_id, res["siguiente_pregunta"])
+
+
+@router.get("/webhook")
+async def verify_webhook_meta(
+    hub_mode: Optional[str] = Query(None, alias="hub.mode"),
+    hub_challenge: Optional[str] = Query(None, alias="hub.challenge"),
+    hub_verify_token: Optional[str] = Query(None, alias="hub.verify_token"),
+):
+    """
+    Endpoint de verificación exigido por Meta WhatsApp Cloud API.
+    """
+    verify_token = settings.WHATSAPP_VERIFY_TOKEN or "surveys_whatsapp_verify_token_2026"
+    if hub_mode == "subscribe" and hub_verify_token == verify_token:
+        logger.info("Webhook de Meta WhatsApp verificado exitosamente.")
+        return Response(content=hub_challenge, media_type="text/plain")
+    raise HTTPException(status_code=403, detail="Verification token mismatch")
 
 
 @router.post("/webhook")
