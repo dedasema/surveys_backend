@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, Union
+from typing import Optional, Union, List
 from datetime import datetime
 from uuid import UUID
 
@@ -67,6 +67,7 @@ class UserProfileBase(BaseModel):
     id: UUID
     email: str
     rol: str
+    permisos: List[str] = []
     creado_en: datetime
     
     model_config = {"from_attributes": True}

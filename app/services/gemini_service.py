@@ -1,4 +1,4 @@
-# app/services/gemini_service.py
+import os
 import logging
 import httpx
 from typing import List, Dict, Any, Optional

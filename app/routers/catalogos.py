@@ -3,14 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_admin_user  # Cambiamos la dependencia
+from app.core.security import get_admin_user
+from app.services.audit_service import registrar_auditoria
 from app.models.catalogos import (
-    Rol, TipoPregunta, Canal,
+    Rol, Permiso, TipoPregunta, Canal,
     EstadoCampana, EstadoEntrega, EstadoDocumento,
     EstadoPago, MetodoPago
 )
 from app.schemas.catalogos import (
-    RolCreate, RolOut, RolUpdate,
+    PermisoOut, RolCreate, RolOut, RolUpdate, RolDetailOut, AsignarPermisosRequest,
     TipoPreguntaCreate, TipoPreguntaOut, TipoPreguntaUpdate,
     CanalCreate, CanalOut, CanalUpdate,
     EstadoCampanaCreate, EstadoCampanaOut, EstadoCampanaUpdate,
@@ -29,7 +30,8 @@ router = APIRouter(
 def _generic_create(db: Session, Model, payload):
     if db.query(Model).filter(Model.nombre == payload.nombre).first():
         raise HTTPException(400, "Ya existe")
-    obj = Model(**payload.dict())
+    data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    obj = Model(**data)
     db.add(obj); db.commit(); db.refresh(obj)
     return obj
 
@@ -44,7 +46,8 @@ def _generic_get(db: Session, Model, obj_id: int):
 
 def _generic_update(db: Session, Model, obj_id: int, payload):
     obj = _generic_get(db, Model, obj_id)
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
+    for k, v in data.items():
         setattr(obj, k, v)
     db.commit(); db.refresh(obj)
     return obj
@@ -53,25 +56,90 @@ def _generic_delete(db: Session, Model, obj_id: int):
     obj = _generic_get(db, Model, obj_id)
     db.delete(obj); db.commit()
 
-@router.post("/roles",     response_model=RolOut, status_code=201)
-def create_rol(payload: RolCreate, db: Session = Depends(get_db)):
-    return _generic_create(db, Rol, payload)
+# --- PERMISOS ---
+@router.get("/permisos", response_model=List[PermisoOut])
+def list_permisos(db: Session = Depends(get_db)):
+    """Lista todos los permisos del sistema organizados por módulo"""
+    return db.query(Permiso).order_by(Permiso.modulo, Permiso.nombre).all()
 
-@router.get("/roles",      response_model=List[RolOut])
+# --- ROLES & PERMISOS ---
+@router.post("/roles", response_model=RolDetailOut, status_code=201)
+def create_rol(payload: RolCreate, db: Session = Depends(get_db)):
+    if db.query(Rol).filter(Rol.nombre == payload.nombre).first():
+        raise HTTPException(400, f"El rol '{payload.nombre}' ya existe")
+    
+    rol = Rol(nombre=payload.nombre, descripcion=payload.descripcion)
+    if payload.permisos_ids:
+        permisos = db.query(Permiso).filter(Permiso.id.in_(payload.permisos_ids)).all()
+        rol.permisos = permisos
+    
+    db.add(rol)
+    db.commit()
+    db.refresh(rol)
+    registrar_auditoria(
+        db, accion="CREAR", modulo="ROLES", entidad_id=str(rol.id),
+        detalles={"nombre": rol.nombre, "descripcion": rol.descripcion}
+    )
+    return rol
+
+@router.get("/roles", response_model=List[RolOut])
 def list_roles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return _generic_list(db, Rol, skip, limit)
 
-@router.get("/roles/{id}",  response_model=RolOut)
+@router.get("/roles-detalle", response_model=List[RolDetailOut])
+def list_roles_detalle(db: Session = Depends(get_db)):
+    """Lista todos los roles con sus permisos asignados"""
+    return db.query(Rol).order_by(Rol.id).all()
+
+@router.get("/roles/{id}", response_model=RolDetailOut)
 def get_rol(id: int, db: Session = Depends(get_db)):
     return _generic_get(db, Rol, id)
 
-@router.put("/roles/{id}",  response_model=RolOut)
+@router.put("/roles/{id}", response_model=RolDetailOut)
 def update_rol(id: int, payload: RolUpdate, db: Session = Depends(get_db)):
-    return _generic_update(db, Rol, id, payload)
+    rol = _generic_get(db, Rol, id)
+    if payload.nombre is not None:
+        rol.nombre = payload.nombre
+    if payload.descripcion is not None:
+        rol.descripcion = payload.descripcion
+    if payload.permisos_ids is not None:
+        permisos = db.query(Permiso).filter(Permiso.id.in_(payload.permisos_ids)).all()
+        rol.permisos = permisos
+    
+    db.commit()
+    db.refresh(rol)
+    registrar_auditoria(
+        db, accion="MODIFICAR", modulo="ROLES", entidad_id=str(rol.id),
+        detalles={"nombre": rol.nombre, "permisos_count": len(rol.permisos)}
+    )
+    return rol
+
+@router.post("/roles/{id}/permisos", response_model=RolDetailOut)
+def asignar_permisos_a_rol(id: int, payload: AsignarPermisosRequest, db: Session = Depends(get_db)):
+    """Asigna o sincroniza la lista de permisos para un rol específico"""
+    rol = _generic_get(db, Rol, id)
+    permisos = db.query(Permiso).filter(Permiso.id.in_(payload.permisos_ids)).all()
+    rol.permisos = permisos
+    db.commit()
+    db.refresh(rol)
+    registrar_auditoria(
+        db, accion="ASIGNAR_PERMISOS", modulo="ROLES", entidad_id=str(rol.id),
+        detalles={"rol": rol.nombre, "permisos_ids": payload.permisos_ids, "total": len(permisos)}
+    )
+    return rol
 
 @router.delete("/roles/{id}", status_code=204)
 def delete_rol(id: int, db: Session = Depends(get_db)):
-    _generic_delete(db, Rol, id)
+    rol = _generic_get(db, Rol, id)
+    if rol.nombre in ["admin", "empresa", "operator"]:
+        raise HTTPException(400, detail=f"No se puede eliminar el rol base del sistema '{rol.nombre}'")
+    nombre_borrado = rol.nombre
+    db.delete(rol)
+    db.commit()
+    registrar_auditoria(
+        db, accion="ELIMINAR", modulo="ROLES", entidad_id=str(id),
+        detalles={"nombre_eliminado": nombre_borrado}
+    )
 
 
 @router.post("/tipos-pregunta", response_model=TipoPreguntaOut, status_code=201)

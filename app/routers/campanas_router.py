@@ -106,6 +106,43 @@ async def get_campana_endpoint(
     
     return campana
 
+@router.get("/{campana_id}/exportar-excel")
+@router.get("/{campana_id}/export-excel")
+async def exportar_excel_campana_endpoint(
+    campana_id: UUID,
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Exporta todas las respuestas y métricas de una campaña a un archivo Excel (.xlsx) estructurado.
+    """
+    from fastapi.responses import StreamingResponse
+    from app.services.excel_export_service import generar_excel_respuestas_campana
+    import urllib.parse
+
+    campana = get_campana(db, campana_id)
+    if not campana:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+
+    if not await validate_subscriber_access(token_data, campana.suscriptor_id, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para exportar datos de esta campaña"
+        )
+
+    excel_stream = generar_excel_respuestas_campana(db, campana_id)
+    filename = f"respuestas_{campana.nombre.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    encoded_filename = urllib.parse.quote(filename)
+
+    return StreamingResponse(
+        excel_stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
 @router.patch("/{campana_id}", response_model=CampanaOut)
 async def update_campana_endpoint(
     campana_id: UUID,

@@ -179,12 +179,13 @@ def get_current_user_profile(
         user = db.query(Administrador).filter(Administrador.id == UUID(user_id)).first()
         if not user:
             raise HTTPException(status_code=404, detail="Administrador no encontrado")
-        # Obtener el objeto rol
         rol = db.get(Rol, user.rol_id)
+        permisos_list = [p.codigo for p in rol.permisos] if rol and rol.permisos else []
         return AdminProfileOut(
             id=user.id,
             email=user.email,
-            rol=rol.nombre,
+            rol=rol.nombre if rol else "admin",
+            permisos=permisos_list,
             activo=user.activo,
             creado_en=user.creado_en
         )
@@ -194,25 +195,29 @@ def get_current_user_profile(
         if not user:
             raise HTTPException(status_code=404, detail="Suscriptor no encontrado")
         rol = db.get(Rol, user.rol_id)
+        permisos_list = [p.codigo for p in rol.permisos] if rol and rol.permisos else []
         return SuscriptorProfileOut(
             id=user.id,
             email=user.email,
-            rol=rol.nombre,
+            rol=rol.nombre if rol else "empresa",
+            permisos=permisos_list,
             nombre=user.nombre,
             telefono=user.telefono,
             estado=user.estado,
             creado_en=user.creado_en
         )
         
-    elif role == "operator":
+    elif role in ["operator", "analista"]:
         user = db.query(CuentaUsuario).filter(CuentaUsuario.id == UUID(user_id)).first()
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         rol = db.get(Rol, user.rol_id)
+        permisos_list = [p.codigo for p in rol.permisos] if rol and rol.permisos else []
         return OperatorProfileOut(
             id=user.id,
             email=user.email,
-            rol=rol.nombre,
+            rol=rol.nombre if rol else role,
+            permisos=permisos_list,
             nombre_completo=user.nombre_completo,
             suscriptor_id=user.suscriptor_id,
             activo=user.activo,

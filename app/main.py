@@ -15,6 +15,8 @@ from app.routers import seeder_router
 from app.routers import pdf_router
 from app.routers import dashboard_router
 from app.routers import chat_router
+from app.routers import auditoria_router
+from app.models.audit_log import AuditLog
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -65,24 +67,123 @@ async def startup_event():
 
     # Auto-create missing tables in database
     try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE rol ADD COLUMN IF NOT EXISTS descripcion VARCHAR;"))
+            conn.commit()
         Base.metadata.create_all(bind=engine)
         print("Database tables verified/created successfully.")
     except Exception as e:
         print(f"Error creating tables: {e}")
 
-    # Seed initial catalog data (roles, tipos_pregunta, etc.)
+    # Seed initial catalog data (roles, permisos, tipos_pregunta, etc.)
     from app.core.database import SessionLocal
     from app.models.catalogos import (
-        Rol, TipoPregunta, Canal, EstadoCampana, EstadoEntrega,
+        Rol, Permiso, TipoPregunta, Canal, EstadoCampana, EstadoEntrega,
         EstadoDocumento, EstadoPago, MetodoPago
     )
     db = SessionLocal()
     try:
-        # Roles
-        roles_default = ["admin", "empresa", "operator"]
-        for r_name in roles_default:
-            if not db.query(Rol).filter_by(nombre=r_name).first():
-                db.add(Rol(nombre=r_name))
+        # 1. Permisos del Sistema
+        permisos_catalogo = [
+            # Plantillas
+            ("plantillas:ver", "Ver Plantillas", "Plantillas", "Permite visualizar el catálogo y detalle de plantillas"),
+            ("plantillas:crear", "Crear Plantillas", "Plantillas", "Permite diseñar y guardar nuevas plantillas de encuesta"),
+            ("plantillas:editar", "Editar Plantillas", "Plantillas", "Permite modificar preguntas y estructura de plantillas"),
+            ("plantillas:eliminar", "Eliminar Plantillas", "Plantillas", "Permite dar de baja plantillas existentes"),
+            # Campañas
+            ("campanas:ver", "Ver Campañas", "Campañas", "Permite ver el listado y estado de campañas"),
+            ("campanas:crear", "Crear Campañas", "Campañas", "Permite configurar y lanzar nuevas campañas"),
+            ("campanas:editar", "Editar Campañas", "Campañas", "Permite reprogramar o modificar campañas"),
+            ("campanas:eliminar", "Eliminar Campañas", "Campañas", "Permite cancelar o eliminar campañas"),
+            # Destinatarios
+            ("destinatarios:ver", "Ver Destinatarios", "Destinatarios", "Permite consultar la agenda de contactos"),
+            ("destinatarios:crear", "Crear Destinatarios", "Destinatarios", "Permite agregar contactos individuales"),
+            ("destinatarios:importar", "Importar Destinatarios", "Destinatarios", "Permite carga masiva mediante archivos Excel"),
+            ("destinatarios:eliminar", "Eliminar Destinatarios", "Destinatarios", "Permite eliminar contactos del directorio"),
+            # Entregas
+            ("entregas:ver", "Ver Entregas", "Entregas", "Permite monitorear el estado de despachos y entregas"),
+            ("entregas:enviar", "Despachar Entregas", "Entregas", "Permite disparar envíos masivos por email o WhatsApp"),
+            ("entregas:generar_pdf", "Generar Formularios PDF", "Entregas", "Permite descargar PDFs individuales con QR y ZIPs"),
+            ("entregas:disparar_voz", "Disparar Llamadas AI", "Entregas", "Permite ejecutar llamadas salientes automatizadas"),
+            # Analítica & IA
+            ("analytics:ver", "Ver Dashboard Analítico", "Analítica", "Permite acceder a KPIs, métricas y gráficos"),
+            ("analytics:resumen_ia", "Generar Resúmenes IA", "Analítica", "Permite ejecutar inferencias cualitativas con GPT-4o"),
+            ("analytics:exportar", "Exportar Reportes", "Analítica", "Permite exportar métricas y respuestas consolidadas"),
+            # Operadores & Usuarios
+            ("usuarios:ver", "Ver Operadores", "Usuarios", "Permite ver el equipo de operadores asociados"),
+            ("usuarios:crear", "Crear Operadores", "Usuarios", "Permite registrar nuevos operadores"),
+            ("usuarios:editar", "Editar Operadores", "Usuarios", "Permite modificar datos de operadores"),
+            ("usuarios:eliminar", "Eliminar Operadores", "Usuarios", "Permite dar de baja operadores"),
+            # Suscripciones & Facturación
+            ("suscripciones:ver", "Ver Suscripción", "Suscripciones", "Permite ver el plan contratado y consumos"),
+            ("suscripciones:gestionar", "Gestionar Pagos", "Suscripciones", "Permite actualizar plan o método de pago"),
+            # Configuración & Catálogos (Admin)
+            ("catalogos:ver", "Ver Catálogos", "Administración", "Permite consultar catálogos del sistema"),
+            ("catalogos:administrar", "Administrar Catálogos", "Administración", "Permite crear o modificar catálogos y roles"),
+        ]
+
+        permisos_db_map = {}
+        for codigo, nombre, modulo, descripcion in permisos_catalogo:
+            p = db.query(Permiso).filter_by(codigo=codigo).first()
+            if not p:
+                p = Permiso(codigo=codigo, nombre=nombre, modulo=modulo, descripcion=descripcion)
+                db.add(p)
+                db.flush()
+            permisos_db_map[codigo] = p
+
+        # 2. Roles con descripciones y permisos predefinidos
+        roles_config = {
+            "admin": {
+                "descripcion": "Administrador total del sistema con acceso irrestricto",
+                "permisos": list(permisos_db_map.keys())
+            },
+            "empresa": {
+                "descripcion": "Empresa suscriptora con control completo de sus encuestas, campañas y operadores",
+                "permisos": [
+                    "plantillas:ver", "plantillas:crear", "plantillas:editar", "plantillas:eliminar",
+                    "campanas:ver", "campanas:crear", "campanas:editar", "campanas:eliminar",
+                    "destinatarios:ver", "destinatarios:crear", "destinatarios:importar", "destinatarios:eliminar",
+                    "entregas:ver", "entregas:enviar", "entregas:generar_pdf", "entregas:disparar_voz",
+                    "analytics:ver", "analytics:resumen_ia", "analytics:exportar",
+                    "usuarios:ver", "usuarios:crear", "usuarios:editar", "usuarios:eliminar",
+                    "suscripciones:ver", "suscripciones:gestionar"
+                ]
+            },
+            "operator": {
+                "descripcion": "Operador de campo encargado de recolección, destinatarios y entregas",
+                "permisos": [
+                    "plantillas:ver",
+                    "campanas:ver",
+                    "destinatarios:ver", "destinatarios:crear", "destinatarios:importar",
+                    "entregas:ver", "entregas:enviar", "entregas:generar_pdf"
+                ]
+            },
+            "analista": {
+                "descripcion": "Analista de datos con acceso de solo lectura y explotación analítica",
+                "permisos": [
+                    "plantillas:ver",
+                    "campanas:ver",
+                    "entregas:ver",
+                    "analytics:ver", "analytics:resumen_ia", "analytics:exportar"
+                ]
+            }
+        }
+
+        for r_name, r_info in roles_config.items():
+            rol_obj = db.query(Rol).filter_by(nombre=r_name).first()
+            if not rol_obj:
+                rol_obj = Rol(nombre=r_name, descripcion=r_info["descripcion"])
+                db.add(rol_obj)
+                db.flush()
+            elif not rol_obj.descripcion:
+                rol_obj.descripcion = r_info["descripcion"]
+
+            # Si no tiene permisos asignados, asignar los por defecto
+            if not rol_obj.permisos:
+                rol_obj.permisos = [permisos_db_map[c] for c in r_info["permisos"] if c in permisos_db_map]
+
+        db.commit()
         
         # Tipos de Pregunta
         tipos_default = ["texto", "opcion_unica", "opcion_multiple", "escala", "nps", "si_no"]
@@ -171,6 +272,7 @@ app.include_router(pdf_router.router)
 app.include_router(seeder_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(chat_router.router)
+app.include_router(auditoria_router.router)
 
 @app.get("/", summary="Health check")
 async def health_check():

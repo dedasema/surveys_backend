@@ -141,3 +141,36 @@ def require_acceso_suscriptor_activo(
         )
 
     return token_data
+
+
+def require_permission(permission_code: str):
+    """
+    Dependencia reutilizable para endpoints que exigen un permiso granular específico.
+    Administradores siempre tienen acceso implícito. Para otros roles, verifica que el rol
+    tenga asignado el permiso_code en la tabla rol_permiso.
+    """
+    def dependency(
+        token_data: TokenData = Depends(get_current_user),
+        db: Session = Depends(get_db)
+    ) -> TokenData:
+        if token_data.role == "admin":
+            return token_data
+
+        from app.models.catalogos import Rol
+        rol = db.query(Rol).filter(Rol.nombre == token_data.role).first()
+        if not rol:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Rol de usuario no reconocido o inactivo"
+            )
+
+        codigos_asignados = {p.codigo for p in rol.permisos}
+        if permission_code not in codigos_asignados:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acceso denegado. Se requiere el permiso: '{permission_code}'"
+            )
+
+        return token_data
+
+    return dependency

@@ -1,18 +1,39 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
+
+class PermisoBase(BaseModel):
+    codigo: str
+    nombre: str
+    modulo: str
+    descripcion: Optional[str] = None
+
+class PermisoOut(PermisoBase):
+    id: int
+    model_config = {"from_attributes": True}
 
 class RolBase(BaseModel):
     nombre: str
+    descripcion: Optional[str] = None
 
 class RolCreate(RolBase):
-    pass
+    permisos_ids: Optional[List[int]] = []
 
 class RolUpdate(BaseModel):
     nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    permisos_ids: Optional[List[int]] = None
 
 class RolOut(RolBase):
     id: int
     model_config = {"from_attributes": True}
+
+class RolDetailOut(RolBase):
+    id: int
+    permisos: List[PermisoOut] = []
+    model_config = {"from_attributes": True}
+
+class AsignarPermisosRequest(BaseModel):
+    permisos_ids: List[int]
 
 
 class TipoPreguntaBase(BaseModel):
