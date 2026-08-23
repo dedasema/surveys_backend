@@ -5,8 +5,11 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
+    File,
+    Form,
     HTTPException,
     Query,
+    UploadFile,
     status,
 )
 from sqlalchemy.orm import Session, joinedload
@@ -39,6 +42,7 @@ from app.services.entregas_service import (
    
 )
 from app.services.respuestas_service import registrar_respuestas_publicas
+from app.services.extractor import GeminiExtractorService
 from app.core.constants import ESTADO_RESPONDIDO, ESTADO_PENDIENTE, ESTADO_ENVIADO
 
 # ─────────────────────────── Routers ─────────────────────────────────────
@@ -255,6 +259,132 @@ async def registrar_respuesta_publica(
         raise HTTPException(500, f"Error registrando respuestas: {exc}") from exc
 
     return {"status": "ok", "respuesta_id": str(resumen.id)}
+
+
+def _build_plantilla_map(plantilla) -> dict:
+    """Construye la estructura de plantilla de preguntas para guiar la extracción de Gemini."""
+    if not plantilla:
+        return {}
+    return {
+        "plantilla_id": str(plantilla.id),
+        "nombre": plantilla.nombre,
+        "preguntas": [
+            {
+                "pregunta_id": str(p.id),
+                "texto": p.texto,
+                "tipo_pregunta_id": p.tipo_pregunta_id,
+                "opciones": [
+                    {"opcion_id": str(o.id), "texto": o.texto}
+                    for o in (p.opciones or [])
+                ]
+            }
+            for p in (plantilla.preguntas or [])
+        ]
+    }
+
+
+@public_router.post("/ocr")
+async def extract_and_register_ocr_endpoint(
+    file: UploadFile = File(...),
+    entrega_id: Optional[UUID] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Extrae y guarda respuestas a partir de una foto/escaneo de formulario de papel (Canal 4 - OCR).
+    Usa Google Gemini Multimodal. Si no se provee entrega_id, intenta extraerlo del QR/encabezado.
+    """
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(400, "El archivo de imagen está vacío")
+
+    mime_type = file.content_type or "image/jpeg"
+    extractor = GeminiExtractorService()
+
+    target_id = entrega_id
+    plantilla_map = {}
+
+    if target_id:
+        entrega = get_entrega_con_plantilla(db, target_id)
+        if not entrega:
+            raise HTTPException(404, f"Entrega {target_id} no encontrada")
+        if entrega.estado_id == ESTADO_RESPONDIDO:
+            raise HTTPException(400, "Esta encuesta ya ha sido respondida")
+        plantilla_map = _build_plantilla_map(entrega.campana.plantilla)
+
+    try:
+        extracted_payload = extractor.extract_from_image(
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            plantilla_map=plantilla_map
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Error durante la extracción OCR con Gemini: {exc}") from exc
+
+    if not target_id:
+        raw_eid = extracted_payload.get("entrega_id")
+        if not raw_eid:
+            raise HTTPException(400, "No se proporcionó entrega_id ni fue detectado en la imagen por el OCR")
+        try:
+            target_id = UUID(raw_eid)
+        except ValueError:
+            raise HTTPException(400, f"El entrega_id detectado '{raw_eid}' no es un UUID válido")
+
+        entrega = get_entrega_con_plantilla(db, target_id)
+        if not entrega:
+            raise HTTPException(404, f"Entrega {target_id} no encontrada")
+        if entrega.estado_id == ESTADO_RESPONDIDO:
+            raise HTTPException(400, "Esta encuesta ya ha sido respondida")
+
+    resumen = await registrar_respuestas_publicas(db, target_id, extracted_payload)
+    return {
+        "status": "ok",
+        "entrega_id": str(target_id),
+        "respuesta_id": str(resumen.id),
+        "respuestas": extracted_payload.get("respuestas_preguntas", [])
+    }
+
+
+@public_router.post("/{entrega_id}/audio")
+async def extract_and_register_audio_endpoint(
+    entrega_id: UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Extrae, transcribe y guarda respuestas a partir de una grabación de audio (Canal 5 - Presencial/Voz).
+    Usa Google Gemini Multimodal.
+    """
+    entrega = get_entrega_con_plantilla(db, entrega_id)
+    if not entrega:
+        raise HTTPException(404, f"Entrega {entrega_id} no encontrada")
+    if entrega.estado_id == ESTADO_RESPONDIDO:
+        raise HTTPException(400, "Esta encuesta ya ha sido respondida")
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(400, "El archivo de audio está vacío")
+
+    mime_type = file.content_type or "audio/mp3"
+    plantilla_map = _build_plantilla_map(entrega.campana.plantilla)
+
+    extractor = GeminiExtractorService()
+    try:
+        extracted_payload = extractor.extract_from_audio(
+            audio_bytes=audio_bytes,
+            mime_type=mime_type,
+            plantilla_map=plantilla_map
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Error durante la extracción de audio con Gemini: {exc}") from exc
+
+    resumen = await registrar_respuestas_publicas(db, entrega_id, extracted_payload)
+    return {
+        "status": "ok",
+        "entrega_id": str(entrega_id),
+        "respuesta_id": str(resumen.id),
+        "transcripcion": extracted_payload.get("transcripcion", ""),
+        "respuestas": extracted_payload.get("respuestas_preguntas", [])
+    }
 
 
 @public_router.get("/buscar", response_model=EntregaPublicaOut)
