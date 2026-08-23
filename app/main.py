@@ -318,13 +318,15 @@ async def startup_event():
 
 
 
-from app.routers import admin_suscriptores_router
+from app.routers import admin_suscriptores_router, anuncios_router
 
 # Registrar todos los routers
 app.include_router(auth.router)
 app.include_router(catalogos.router)
 app.include_router(subscription.router)
 app.include_router(admin_suscriptores_router.router)
+app.include_router(anuncios_router.admin_router)
+app.include_router(anuncios_router.public_router)
 app.include_router(plantillas_router.router)
 app.include_router(campanas_router.router)
 app.include_router(preguntas_router.router)
