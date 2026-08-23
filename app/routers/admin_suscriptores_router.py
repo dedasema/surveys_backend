@@ -15,6 +15,7 @@ from app.models.cuenta_usuario import CuentaUsuario
 from app.models.survey import CampanaEncuesta, EntregaEncuesta, PlantillaEncuesta
 from app.services.plan_limits_service import get_plan_suscriptor
 from app.schemas.subscription import PagoSuscriptorOut, PlanSuscripcionOut
+from app.schemas.auth import TokenData
 from app.schemas.admin_suscriptores_schema import (
     SuscriptorListOut,
     SuscriptorDetail360Out,
@@ -126,6 +127,50 @@ def list_suscriptores_endpoint(db: Session = Depends(get_db)):
             })
 
     return res
+
+
+# 2. COCKPIT FINANCIERO Y MÉTRICAS SAAS (MRR, ARR, ARPU, DISTRIBUCIÓN)
+@router.get("/metrics/financieras", summary="Obtiene el tablero de métricas financieras y salud del SaaS (MRR, ARR, ARPU)")
+def get_metrics_financieras_endpoint(db: Session = Depends(get_db)):
+    suscriptores = db.query(Suscriptor).all()
+    total_activos = sum(1 for s in suscriptores if s.estado == "activo")
+    total_suspendidos = sum(1 for s in suscriptores if s.estado == "suspendido")
+    total_empresas = len(suscriptores)
+
+    mrr = 0.0
+    distribucion = {}
+
+    for s in suscriptores:
+        if s.estado == "activo":
+            plan = get_plan_suscriptor(db, s.id)
+            mrr += float(plan.precio_mensual)
+            distribucion[plan.nombre] = distribucion.get(plan.nombre, 0) + 1
+
+    mrr_rounded = round(mrr, 2)
+    arr_rounded = round(mrr * 12, 2)
+    arpu = round(mrr / total_activos, 2) if total_activos > 0 else 0.0
+
+    now = datetime.now()
+    inicio_mes = datetime(now.year, now.month, 1)
+    total_entregas_plataforma = (
+        db.query(EntregaEncuesta)
+        .join(CampanaEncuesta)
+        .filter(
+            func.coalesce(EntregaEncuesta.enviado_en, EntregaEncuesta.respondido_en, CampanaEncuesta.creado_en) >= inicio_mes
+        )
+        .count()
+    )
+
+    return {
+        "mrr_usd": mrr_rounded,
+        "arr_usd": arr_rounded,
+        "arpu_usd": arpu,
+        "total_empresas_activas": total_activos,
+        "total_empresas_suspendidas": total_suspendidos,
+        "total_empresas_registradas": total_empresas,
+        "entregas_totales_mes_plataforma": total_entregas_plataforma,
+        "distribucion_suscriptores_por_plan": distribucion
+    }
 
 
 # 2. DETALLE 360 DE UN SUSCRIPTOR
