@@ -65,16 +65,32 @@ async def startup_event():
     import app.models.subscription
     import app.models.survey
 
-    # Auto-create missing tables in database
+    # Auto-create missing tables and migrate schema in database
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE rol ADD COLUMN IF NOT EXISTS descripcion VARCHAR;"))
+            
+            # Migraciones para plan_suscripcion
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS max_plantillas INTEGER NOT NULL DEFAULT 5;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS max_campanas INTEGER NOT NULL DEFAULT 5;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS max_entregas INTEGER NOT NULL DEFAULT 500;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS max_operadores INTEGER NOT NULL DEFAULT 1;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS permite_email BOOLEAN NOT NULL DEFAULT TRUE;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS permite_audio_voz BOOLEAN NOT NULL DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS permite_papel BOOLEAN NOT NULL DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS permite_ia_analisis BOOLEAN NOT NULL DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS permite_exportacion BOOLEAN NOT NULL DEFAULT TRUE;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS caracteristicas TEXT DEFAULT '';"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE;"))
+            conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255);"))
+            
             conn.commit()
+
         Base.metadata.create_all(bind=engine)
-        print("Database tables verified/created successfully.")
+        print("Database tables verified/created/migrated successfully.")
     except Exception as e:
-        print(f"Error creating tables: {e}")
+        print(f"Error creating/migrating tables: {e}")
 
     # Seed initial catalog data (roles, permisos, tipos_pregunta, etc.)
     from app.core.database import SessionLocal
