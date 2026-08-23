@@ -16,6 +16,7 @@ from app.models.survey import CampanaEncuesta, EntregaEncuesta, PlantillaEncuest
 from app.services.plan_limits_service import get_plan_suscriptor
 from app.schemas.subscription import PagoSuscriptorOut, PlanSuscripcionOut
 from app.schemas.auth import TokenData
+from app.schemas.catalogos import RolDetailOut, PermisoOut
 from app.schemas.admin_suscriptores_schema import (
     SuscriptorListOut,
     SuscriptorDetail360Out,
@@ -403,3 +404,16 @@ def get_consumo_ia_endpoint(
         "almacenamiento_estimado_mb": almacenamiento_mb,
         "costo_estimado_usd": round(total_tokens * 0.0000005, 4)
     }
+
+
+# 9. ROLES Y MATRIZ DE PERMISOS GRANULARES (RBAC ENGINE)
+@router.get("/roles-matriz", response_model=List[RolDetailOut], summary="Obtiene la matriz completa de roles con sus permisos asignados")
+def list_roles_matriz_admin_endpoint(db: Session = Depends(get_db)):
+    from app.models.catalogos import Rol
+    return db.query(Rol).order_by(Rol.id).all()
+
+
+@router.get("/permisos-catalogo", response_model=List[PermisoOut], summary="Obtiene el catálogo de permisos atómicos del sistema organizados por módulo")
+def list_permisos_admin_endpoint(db: Session = Depends(get_db)):
+    from app.models.catalogos import Permiso
+    return db.query(Permiso).order_by(Permiso.modulo, Permiso.nombre).all()

@@ -36,17 +36,7 @@ def test_get_plan_suscriptor_fallback(db_session):
 def test_validate_canal_permission_gratuito(db_session):
     dummy_suscriptor_id = uuid4()
     
-    # Canal 1 (email) debe ser permitido
+    # Canal 1 (email), Canal 4 (papel) y Canal 5 (audio/voz) permitidos en Gratuito para demo
     validate_canal_permission(db_session, dummy_suscriptor_id, 1)
-
-    # Canal 4 (papel) no permitido en Gratuito por defecto
-    with pytest.raises(HTTPException) as excinfo_4:
-        validate_canal_permission(db_session, dummy_suscriptor_id, 4)
-    assert excinfo_4.value.status_code == 403
-    assert "Papel con OCR" in excinfo_4.value.detail
-
-    # Canal 5 (audio/voz) no permitido en Gratuito por defecto
-    with pytest.raises(HTTPException) as excinfo_5:
-        validate_canal_permission(db_session, dummy_suscriptor_id, 5)
-    assert excinfo_5.value.status_code == 403
-    assert "asistidas por voz" in excinfo_5.value.detail
+    validate_canal_permission(db_session, dummy_suscriptor_id, 4)
+    validate_canal_permission(db_session, dummy_suscriptor_id, 5)
