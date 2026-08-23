@@ -509,15 +509,21 @@ def get_mi_suscripcion(
         CampanaEncuesta.suscriptor_id == suscriptor_id,
         CampanaEncuesta.estado_id != 5  # No canceladas
     ).count()
+    from sqlalchemy.sql import func
     entregas_mes_actual = (
         db.query(EntregaEncuesta)
         .join(CampanaEncuesta)
-        .filter(CampanaEncuesta.suscriptor_id == suscriptor_id, EntregaEncuesta.creado_en >= inicio_mes)
+        .filter(
+            CampanaEncuesta.suscriptor_id == suscriptor_id,
+            func.coalesce(EntregaEncuesta.enviado_en, EntregaEncuesta.respondido_en, CampanaEncuesta.creado_en) >= inicio_mes
+        )
         .count()
     )
+    from app.models.catalogos import Rol
     operadores_activos = (
         db.query(CuentaUsuario)
-        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, CuentaUsuario.role == "operator")
+        .join(CuentaUsuario.rol)
+        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, Rol.nombre == "operator")
         .count()
     )
 

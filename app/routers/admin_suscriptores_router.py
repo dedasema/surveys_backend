@@ -5,6 +5,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+import app.models.catalogos
+from sqlalchemy.sql import func
 from app.core.database import get_db
 from app.core.security import get_admin_user
 from app.models.suscriptor import Suscriptor
@@ -41,12 +43,17 @@ def _build_resumen_uso(db: Session, suscriptor_id: UUID, plan: PlanSuscripcion) 
     entregas_mes = (
         db.query(EntregaEncuesta)
         .join(CampanaEncuesta)
-        .filter(CampanaEncuesta.suscriptor_id == suscriptor_id, EntregaEncuesta.creado_en >= inicio_mes)
+        .filter(
+            CampanaEncuesta.suscriptor_id == suscriptor_id,
+            func.coalesce(EntregaEncuesta.enviado_en, EntregaEncuesta.respondido_en, CampanaEncuesta.creado_en) >= inicio_mes
+        )
         .count()
     )
+    from app.models.catalogos import Rol
     operadores_activos = (
         db.query(CuentaUsuario)
-        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, CuentaUsuario.role == "operator")
+        .join(CuentaUsuario.rol)
+        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, Rol.nombre == "operator")
         .count()
     )
 
@@ -208,9 +215,11 @@ def get_suscriptor_operadores_endpoint(suscriptor_id: UUID, db: Session = Depend
     if not suscriptor:
         raise HTTPException(status_code=404, detail="Suscriptor no encontrado")
 
+    from app.models.catalogos import Rol
     operadores = (
         db.query(CuentaUsuario)
-        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, CuentaUsuario.role == "operator")
+        .join(CuentaUsuario.rol)
+        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, Rol.nombre == "operator")
         .all()
     )
 

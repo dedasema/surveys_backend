@@ -85,6 +85,9 @@ async def startup_event():
             conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE;"))
             conn.execute(text("ALTER TABLE plan_suscripcion ADD COLUMN IF NOT EXISTS stripe_price_id VARCHAR(255);"))
             
+            # Migración para entrega_encuesta
+            conn.execute(text("ALTER TABLE entrega_encuesta ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW();"))
+
             conn.commit()
 
         Base.metadata.create_all(bind=engine)

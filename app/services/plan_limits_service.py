@@ -92,9 +92,11 @@ def validate_operadores_limit(db: Session, suscriptor_id: UUID) -> None:
     if plan.max_operadores == -1:
         return  # Ilimitado
 
+    from app.models.catalogos import Rol
     current_count = (
         db.query(CuentaUsuario)
-        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, CuentaUsuario.role == "operator")
+        .join(CuentaUsuario.rol)
+        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, Rol.nombre == "operator")
         .count()
     )
     if current_count >= plan.max_operadores:
@@ -115,13 +117,14 @@ def validate_entregas_limit(db: Session, suscriptor_id: UUID, nuevas_entregas: i
     now = datetime.now()
     inicio_mes = datetime(now.year, now.month, 1)
 
+    from sqlalchemy.sql import func
     # Entregas creadas este mes
     current_count = (
         db.query(EntregaEncuesta)
         .join(CampanaEncuesta)
         .filter(
             CampanaEncuesta.suscriptor_id == suscriptor_id,
-            EntregaEncuesta.creado_en >= inicio_mes
+            func.coalesce(EntregaEncuesta.enviado_en, EntregaEncuesta.respondido_en, CampanaEncuesta.creado_en) >= inicio_mes
         )
         .count()
     )
