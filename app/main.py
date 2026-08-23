@@ -230,13 +230,62 @@ async def startup_event():
         # Planes por defecto (Suscripciones)
         from app.models.subscription import PlanSuscripcion
         planes_default = [
-            {"nombre": "Gratuito", "precio_mensual": 0.0, "descripcion": "Plan básico gratuito de prueba"},
-            {"nombre": "Profesional", "precio_mensual": 29.99, "descripcion": "Plan profesional con funciones avanzadas e IA"},
-            {"nombre": "Enterprise", "precio_mensual": 99.99, "descripcion": "Plan empresarial ilimitado"}
+            {
+                "nombre": "Gratuito",
+                "precio_mensual": 0.0,
+                "descripcion": "Plan básico gratuito de prueba",
+                "max_plantillas": 5,
+                "max_campanas": 5,
+                "max_entregas": 500,
+                "max_operadores": 1,
+                "permite_email": True,
+                "permite_audio_voz": False,
+                "permite_papel": False,
+                "permite_ia_analisis": False,
+                "permite_exportacion": True,
+                "caracteristicas": "5 Plantillas;5 Campañas;500 Entregas/mes;1 Operador;Encuestas por Email",
+                "activo": True,
+            },
+            {
+                "nombre": "Profesional",
+                "precio_mensual": 29.99,
+                "descripcion": "Plan profesional con funciones avanzadas e IA",
+                "max_plantillas": 50,
+                "max_campanas": 50,
+                "max_entregas": 5000,
+                "max_operadores": 5,
+                "permite_email": True,
+                "permite_audio_voz": True,
+                "permite_papel": True,
+                "permite_ia_analisis": True,
+                "permite_exportacion": True,
+                "caracteristicas": "50 Plantillas;50 Campañas;5.000 Entregas/mes;5 Operadores;OCR Papel con IA;Audio / Voz con IA;Análisis Avanzado",
+                "activo": True,
+            },
+            {
+                "nombre": "Enterprise",
+                "precio_mensual": 99.99,
+                "descripcion": "Plan empresarial ilimitado",
+                "max_plantillas": -1,
+                "max_campanas": -1,
+                "max_entregas": -1,
+                "max_operadores": -1,
+                "permite_email": True,
+                "permite_audio_voz": True,
+                "permite_papel": True,
+                "permite_ia_analisis": True,
+                "permite_exportacion": True,
+                "caracteristicas": "Plantillas Ilimitadas;Campañas Ilimitadas;Entregas Ilimitadas;Operadores Ilimitados;OCR Papel con IA;Audio / Voz con IA;Exportación y API Completa",
+                "activo": True,
+            }
         ]
         for p_data in planes_default:
-            if not db.query(PlanSuscripcion).filter_by(nombre=p_data["nombre"]).first():
+            plan_existente = db.query(PlanSuscripcion).filter_by(nombre=p_data["nombre"]).first()
+            if not plan_existente:
                 db.add(PlanSuscripcion(**p_data))
+            else:
+                for k, v in p_data.items():
+                    setattr(plan_existente, k, v)
 
         db.commit()
         print("Catalogs and default plans seeded successfully.")

@@ -67,6 +67,10 @@ async def create_campana_endpoint(
         .scalar()
     )
     
+    from app.services.plan_limits_service import validate_campanas_limit, validate_canal_permission
+    validate_campanas_limit(db, suscriptor_id)
+    validate_canal_permission(db, suscriptor_id, payload.canal_id)
+
     return create_campana(db, payload, suscriptor_id)
 
 @router.get("", response_model=List[CampanaOut])

@@ -15,6 +15,7 @@ from app.services.plantillas_service import (
     create_plantilla, get_plantilla, get_plantilla_con_preguntas,
     list_plantillas, update_plantilla, delete_plantilla
 )
+from app.services.plan_limits_service import validate_plantillas_limit
 
 router = APIRouter(
     prefix="/plantillas",
@@ -39,6 +40,7 @@ async def create_plantilla_endpoint(
         .scalar()
     )
     
+    validate_plantillas_limit(db, suscriptor_id)
     return create_plantilla(db, payload, suscriptor_id)
 
 @router.get("", response_model=List[PlantillaOut])

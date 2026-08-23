@@ -100,6 +100,9 @@ async def register_usuario(
     if exists:
         raise HTTPException(status_code=400, detail="El email ya está registrado para este suscriptor")
 
+    from app.services.plan_limits_service import validate_operadores_limit
+    validate_operadores_limit(db, payload.suscriptor_id)
+
     rol_operator = db.query(Rol).filter_by(nombre="operator").first()
     if not rol_operator:
         raise HTTPException(status_code=500, detail="Rol 'operator' no configurado")

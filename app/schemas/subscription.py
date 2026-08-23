@@ -1,20 +1,54 @@
-from pydantic import BaseModel, condecimal
+from pydantic import BaseModel, Field
+from decimal import Decimal
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, List
 
 class PlanSuscripcionBase(BaseModel):
     nombre: str
-    precio_mensual: condecimal(max_digits=10, decimal_places=2)
+    precio_mensual: Decimal = Field(..., max_digits=10, decimal_places=2)
     descripcion: Optional[str] = None
+    
+    max_plantillas: int = Field(default=5, description="Número máximo de plantillas (-1 ilimitado)")
+    max_campanas: int = Field(default=5, description="Número máximo de campañas (-1 ilimitado)")
+    max_entregas: int = Field(default=500, description="Cuota mensual máxima de entregas (-1 ilimitado)")
+    max_operadores: int = Field(default=1, description="Número máximo de cuentas de operador (-1 ilimitado)")
+    
+    permite_email: bool = Field(default=True)
+    permite_audio_voz: bool = Field(default=False)
+    permite_papel: bool = Field(default=False)
+    permite_ia_analisis: bool = Field(default=False)
+    permite_exportacion: bool = Field(default=True)
+    
+    caracteristicas: Optional[str] = ""
+    activo: bool = Field(default=True)
+    stripe_price_id: Optional[str] = None
+
 
 class PlanSuscripcionCreate(PlanSuscripcionBase):
     pass
 
+
 class PlanSuscripcionUpdate(BaseModel):
-    nombre: Optional[str]
-    precio_mensual: Optional[condecimal(max_digits=10, decimal_places=2)]
-    descripcion: Optional[str]
+    nombre: Optional[str] = None
+    precio_mensual: Optional[Decimal] = None
+    descripcion: Optional[str] = None
+    
+    max_plantillas: Optional[int] = None
+    max_campanas: Optional[int] = None
+    max_entregas: Optional[int] = None
+    max_operadores: Optional[int] = None
+    
+    permite_email: Optional[bool] = None
+    permite_audio_voz: Optional[bool] = None
+    permite_papel: Optional[bool] = None
+    permite_ia_analisis: Optional[bool] = None
+    permite_exportacion: Optional[bool] = None
+    
+    caracteristicas: Optional[str] = None
+    activo: Optional[bool] = None
+    stripe_price_id: Optional[str] = None
+
 
 class PlanSuscripcionOut(PlanSuscripcionBase):
     id: int
@@ -30,22 +64,26 @@ class SuscripcionSuscriptorBase(BaseModel):
     expira_en: Optional[datetime] = None
     estado: Optional[str] = "activo"
 
+
 class SuscripcionSuscriptorCreate(SuscripcionSuscriptorBase):
     pass
 
+
 class SuscripcionSuscriptorUpdate(BaseModel):
-    expira_en: Optional[datetime]
-    estado: Optional[str]
+    expira_en: Optional[datetime] = None
+    estado: Optional[str] = None
+
 
 class SuscripcionSuscriptorOut(SuscripcionSuscriptorBase):
     id: UUID
+    plan: Optional[PlanSuscripcionOut] = None
 
     model_config = {"from_attributes": True}
 
 
-# Para endpoints que devuelven listas
 class PlanesList(BaseModel):
     planes: List[PlanSuscripcionOut]
+
 
 class SuscripcionesList(BaseModel):
     suscripciones: List[SuscripcionSuscriptorOut]

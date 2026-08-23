@@ -21,26 +21,39 @@ def get_plan(db: Session, plan_id: int) -> PlanSuscripcion | None:
     return db.get(PlanSuscripcion, plan_id)
 
 def list_planes(db: Session) -> List[PlanSuscripcion]:
-    return db.query(PlanSuscripcion).all()
+    return db.query(PlanSuscripcion).filter(PlanSuscripcion.activo == True).all()
 
 def create_plan(db: Session, payload: PlanSuscripcionCreate) -> PlanSuscripcion:
-    # Crear producto en Stripe
-    product = stripe.Product.create(name=payload.nombre)
+    stripe_price_id = None
+    if stripe is not None and getattr(settings, 'STRIPE_SECRET_KEY', None):
+        try:
+            product = stripe.Product.create(name=payload.nombre)
+            price = stripe.Price.create(
+                unit_amount=int(payload.precio_mensual * 100),
+                currency="usd",
+                recurring={"interval": "month"},
+                product=product.id
+            )
+            stripe_price_id = price.id
+        except Exception as exc:
+            logger.warning("No se pudo crear producto/precio en Stripe: %s", exc)
 
-    # Crear price en Stripe
-    price = stripe.Price.create(
-        unit_amount=int(payload.precio_mensual * 100),
-        currency="usd",  # ajusta a tu moneda
-        recurring={"interval": "month"},
-        product=product.id
-    )
-
-    # Guardar en DB
     plan = PlanSuscripcion(
         nombre=payload.nombre,
         precio_mensual=payload.precio_mensual,
         descripcion=payload.descripcion,
-        stripe_price_id=price.id
+        max_plantillas=payload.max_plantillas,
+        max_campanas=payload.max_campanas,
+        max_entregas=payload.max_entregas,
+        max_operadores=payload.max_operadores,
+        permite_email=payload.permite_email,
+        permite_audio_voz=payload.permite_audio_voz,
+        permite_papel=payload.permite_papel,
+        permite_ia_analisis=payload.permite_ia_analisis,
+        permite_exportacion=payload.permite_exportacion,
+        caracteristicas=payload.caracteristicas,
+        activo=payload.activo,
+        stripe_price_id=stripe_price_id or payload.stripe_price_id
     )
     db.add(plan)
     db.commit()
@@ -52,32 +65,27 @@ def update_plan(db: Session, plan_id: int, payload: PlanSuscripcionUpdate) -> Pl
     if not plan:
         raise Exception("Plan no encontrado")
 
-    # Recuperar product ID
-    price = stripe.Price.retrieve(plan.stripe_price_id)
-    product_id = price.product
+    if stripe is not None and getattr(settings, 'STRIPE_SECRET_KEY', None) and plan.stripe_price_id:
+        try:
+            price = stripe.Price.retrieve(plan.stripe_price_id)
+            product_id = price.product
+            if payload.nombre:
+                stripe.Product.modify(product_id, name=payload.nombre)
+            if payload.precio_mensual and payload.precio_mensual != plan.precio_mensual:
+                new_price = stripe.Price.create(
+                    unit_amount=int(payload.precio_mensual * 100),
+                    currency="usd",
+                    recurring={"interval": "month"},
+                    product=product_id
+                )
+                plan.stripe_price_id = new_price.id
+        except Exception as exc:
+            logger.warning("No se pudo actualizar producto/precio en Stripe: %s", exc)
 
-    # Actualizar producto en Stripe
-    stripe.Product.modify(
-        product_id,
-        name=payload.nombre or plan.nombre,
-    )
-
-    # Si cambió el precio, crear nuevo price
-    if payload.precio_mensual and payload.precio_mensual != plan.precio_mensual:
-        new_price = stripe.Price.create(
-            unit_amount=int(payload.precio_mensual * 100),
-            currency="usd",
-            recurring={"interval": "month"},
-            product=product_id
-        )
-        plan.stripe_price_id = new_price.id
-        plan.precio_mensual = payload.precio_mensual
-
-    # Actualizar nombre/desc en DB
-    if payload.nombre:
-        plan.nombre = payload.nombre
-    if payload.descripcion is not None:
-        plan.descripcion = payload.descripcion
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        if value is not None:
+            setattr(plan, key, value)
 
     db.commit()
     db.refresh(plan)
@@ -88,14 +96,25 @@ def delete_plan(db: Session, plan_id: int) -> None:
     if not plan:
         raise Exception("Plan no encontrado")
 
-    # Archivar en Stripe
-    price = stripe.Price.retrieve(plan.stripe_price_id)
-    product_id = price.product
-    stripe.Product.modify(product_id, active=False)
-    stripe.Price.modify(plan.stripe_price_id, active=False)
+    # Validar que no tenga suscriptores activos
+    suscritos = db.query(SuscripcionSuscriptor).filter(
+        SuscripcionSuscriptor.plan_id == plan_id,
+        SuscripcionSuscriptor.estado == "activo"
+    ).count()
+    if suscritos > 0:
+        raise Exception(f"No se puede eliminar el plan {plan.nombre} porque tiene {suscritos} suscriptores activos.")
 
-    # Eliminar en DB
-    db.delete(plan)
+    if stripe is not None and getattr(settings, 'STRIPE_SECRET_KEY', None) and plan.stripe_price_id:
+        try:
+            price = stripe.Price.retrieve(plan.stripe_price_id)
+            product_id = price.product
+            stripe.Product.modify(product_id, active=False)
+            stripe.Price.modify(plan.stripe_price_id, active=False)
+        except Exception as exc:
+            logger.warning("No se pudo desactivar en Stripe: %s", exc)
+
+    # Borrado lógico desactivándolo
+    plan.activo = False
     db.commit()
 
 # ---------------- SuscripcionSuscriptor (sin cambios) ----------------

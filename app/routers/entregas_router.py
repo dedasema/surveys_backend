@@ -68,6 +68,9 @@ async def validate_campana_access(
         )
 
 
+from app.services.plan_limits_service import validate_entregas_limit, validate_canal_permission
+
+
 # ───────────────────── Endpoints PRIVADOS (con auth) ─────────────────────
 @router.post("", response_model=EntregaOut)
 async def create_entrega_endpoint(
@@ -77,6 +80,10 @@ async def create_entrega_endpoint(
     db: Session = Depends(get_db),
 ):
     await validate_campana_access(campana_id, token_data, db)
+    campana = get_campana(db, campana_id)
+    if campana:
+        validate_canal_permission(db, campana.suscriptor_id, campana.canal_id)
+        validate_entregas_limit(db, campana.suscriptor_id, 1)
     return await create_entrega(db, campana_id, payload)
 
 
@@ -96,6 +103,9 @@ async def create_bulk_papel_endpoint(
     campana = get_campana(db, campana_id)
     if not campana or campana.canal_id != 4:
         raise HTTPException(400, "La campaña debe ser de canal 4 (papel)")
+
+    validate_canal_permission(db, campana.suscriptor_id, 4)
+    validate_entregas_limit(db, campana.suscriptor_id, cantidad)
 
     return create_bulk_entregas_papel(db, campana_id, cantidad)
 
@@ -418,6 +428,9 @@ async def create_bulk_audio_endpoint(
     campana = get_campana(db, campana_id)
     if not campana or campana.canal_id != 5:
         raise HTTPException(400, "La campaña debe ser de canal 5 (audio grabado)")
+
+    validate_canal_permission(db, campana.suscriptor_id, 5)
+    validate_entregas_limit(db, campana.suscriptor_id, cantidad)
 
     return create_bulk_entregas_audio(db, campana_id, cantidad)
 
