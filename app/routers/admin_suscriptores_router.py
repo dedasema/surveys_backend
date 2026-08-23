@@ -67,14 +67,16 @@ def _build_resumen_uso(db: Session, suscriptor_id: UUID, plan: PlanSuscripcion) 
 def list_suscriptores_endpoint(db: Session = Depends(get_db)):
     suscriptores = db.query(Suscriptor).order_by(Suscriptor.creado_en.desc()).all()
     res = []
+    seen_ids = set()
 
     for s in suscriptores:
+        seen_ids.add(str(s.id))
         plan = get_plan_suscriptor(db, s.id)
         resumen_uso = _build_resumen_uso(db, s.id, plan)
 
         res.append({
             "id": s.id,
-            "nombre_empresa": s.nombre,
+            "nombre_empresa": s.nombre or s.email,
             "email_contacto": s.email,
             "telefono": s.telefono,
             "estado": s.estado or "activo",
@@ -87,6 +89,35 @@ def list_suscriptores_endpoint(db: Session = Depends(get_db)):
             "resumen_uso": resumen_uso
         })
 
+    # Buscar usuarios con rol 'empresa' en CuentaUsuario que no estén en la tabla Suscriptor
+    empresa_cuentas = (
+        db.query(CuentaUsuario)
+        .join(CuentaUsuario.rol)
+        .filter(CuentaUsuario.rol.has(nombre="empresa"))
+        .all()
+    )
+
+    for c in empresa_cuentas:
+        target_id = c.suscriptor_id or c.id
+        if str(target_id) not in seen_ids:
+            seen_ids.add(str(target_id))
+            plan = get_plan_suscriptor(db, target_id)
+            resumen_uso = _build_resumen_uso(db, target_id, plan)
+            res.append({
+                "id": target_id,
+                "nombre_empresa": c.nombre_completo or c.email,
+                "email_contacto": c.email,
+                "telefono": None,
+                "estado": "activo" if c.activo else "suspendido",
+                "creado_en": c.creado_en or datetime.now(),
+                "plan": {
+                    "id": plan.id,
+                    "nombre": plan.nombre,
+                    "precio_mensual": plan.precio_mensual
+                },
+                "resumen_uso": resumen_uso
+            })
+
     return res
 
 
@@ -94,15 +125,40 @@ def list_suscriptores_endpoint(db: Session = Depends(get_db)):
 @router.get("/{suscriptor_id}", response_model=SuscriptorDetail360Out, summary="Detalle 360 de la empresa con plan y cuotas")
 def get_suscriptor_detail_endpoint(suscriptor_id: UUID, db: Session = Depends(get_db)):
     suscriptor = db.get(Suscriptor, suscriptor_id)
-    if not suscriptor:
-        raise HTTPException(status_code=404, detail="Suscriptor/Empresa no encontrado")
+    
+    nombre_empresa = ""
+    email_contacto = ""
+    telefono = None
+    estado = "activo"
+    creado_en = datetime.now()
+    stripe_customer_id = None
 
-    plan = get_plan_suscriptor(db, suscriptor.id)
-    resumen_uso = _build_resumen_uso(db, suscriptor.id, plan)
+    if suscriptor:
+        nombre_empresa = suscriptor.nombre
+        email_contacto = suscriptor.email
+        telefono = suscriptor.telefono
+        estado = suscriptor.estado or "activo"
+        creado_en = suscriptor.creado_en or datetime.now()
+        stripe_customer_id = suscriptor.stripe_customer_id
+    else:
+        # Fallback a CuentaUsuario
+        cuenta = db.get(CuentaUsuario, suscriptor_id)
+        if not cuenta:
+            # Buscar por suscriptor_id en CuentaUsuario
+            cuenta = db.query(CuentaUsuario).filter(CuentaUsuario.suscriptor_id == suscriptor_id).first()
+        if not cuenta:
+            raise HTTPException(status_code=404, detail="Suscriptor/Empresa no encontrado")
+        nombre_empresa = cuenta.nombre_completo or cuenta.email
+        email_contacto = cuenta.email
+        estado = "activo" if cuenta.activo else "suspendido"
+        creado_en = cuenta.creado_en or datetime.now()
+
+    plan = get_plan_suscriptor(db, suscriptor_id)
+    resumen_uso = _build_resumen_uso(db, suscriptor_id, plan)
 
     suscripcion_activa = (
         db.query(SuscripcionSuscriptor)
-        .filter(SuscripcionSuscriptor.suscriptor_id == suscriptor.id, SuscripcionSuscriptor.estado == "activo")
+        .filter(SuscripcionSuscriptor.suscriptor_id == suscriptor_id, SuscripcionSuscriptor.estado == "activo")
         .order_by(SuscripcionSuscriptor.inicia_en.desc())
         .first()
     )
@@ -117,13 +173,13 @@ def get_suscriptor_detail_endpoint(suscriptor_id: UUID, db: Session = Depends(ge
         }
 
     return {
-        "id": suscriptor.id,
-        "nombre_empresa": suscriptor.nombre,
-        "email_contacto": suscriptor.email,
-        "telefono": suscriptor.telefono,
-        "estado": suscriptor.estado or "activo",
-        "creado_en": suscriptor.creado_en or datetime.now(),
-        "stripe_customer_id": suscriptor.stripe_customer_id,
+        "id": suscriptor_id,
+        "nombre_empresa": nombre_empresa,
+        "email_contacto": email_contacto,
+        "telefono": telefono,
+        "estado": estado,
+        "creado_en": creado_en,
+        "stripe_customer_id": stripe_customer_id,
         "suscripcion_activa": sub_activa_data,
         "plan": plan,
         "resumen_uso": resumen_uso
