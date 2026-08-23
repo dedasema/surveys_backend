@@ -21,7 +21,13 @@ from app.models.audit_log import AuditLog
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+import os
+from fastapi.staticfiles import StaticFiles
+
 app = FastAPI(title="Mi API SaaS", version="0.1.0")
+
+os.makedirs("uploads/avatars", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 origins = [
     "https://surveysfrontend.vercel.app",
@@ -87,6 +93,11 @@ async def startup_event():
             
             # Migración para entrega_encuesta
             conn.execute(text("ALTER TABLE entrega_encuesta ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW();"))
+
+            # Migraciones para foto_url de usuarios
+            conn.execute(text("ALTER TABLE suscriptor ADD COLUMN IF NOT EXISTS foto_url TEXT;"))
+            conn.execute(text("ALTER TABLE cuenta_usuario ADD COLUMN IF NOT EXISTS foto_url TEXT;"))
+            conn.execute(text("ALTER TABLE administrador ADD COLUMN IF NOT EXISTS foto_url TEXT;"))
 
             conn.commit()
 

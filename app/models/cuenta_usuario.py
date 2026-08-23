@@ -14,6 +14,7 @@ class CuentaUsuario(Base):
     rol_id = Column(Integer, ForeignKey("rol.id"), nullable=False, default=2)
     activo = Column(Boolean, default=True)
     creado_en = Column(TIMESTAMP(timezone=True), server_default="now()")
+    foto_url = Column(Text, nullable=True)
 
     suscriptor = relationship("Suscriptor", back_populates="usuarios")
     rol = relationship("Rol")

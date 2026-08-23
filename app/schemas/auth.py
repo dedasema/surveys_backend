@@ -69,6 +69,7 @@ class UserProfileBase(BaseModel):
     rol: str
     permisos: List[str] = []
     creado_en: datetime
+    foto_url: Optional[str] = None
     
     model_config = {"from_attributes": True}
 

@@ -15,6 +15,7 @@ class Suscriptor(Base):
     estado = Column(Text, default="inactivo")
     creado_en = Column(TIMESTAMP(timezone=True), server_default="now()")
     stripe_customer_id = Column(Text, nullable=True)
+    foto_url = Column(Text, nullable=True)
 
     rol = relationship("Rol")
     usuarios = relationship("CuentaUsuario", back_populates="suscriptor")

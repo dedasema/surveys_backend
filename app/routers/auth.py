@@ -1,7 +1,7 @@
 # app/routers/auth.py
 
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, UploadFile, File
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -190,7 +190,8 @@ def get_current_user_profile(
             rol=rol.nombre if rol else "admin",
             permisos=permisos_list,
             activo=user.activo,
-            creado_en=user.creado_en
+            creado_en=user.creado_en,
+            foto_url=user.foto_url
         )
         
     elif role == "empresa":
@@ -207,7 +208,8 @@ def get_current_user_profile(
             nombre=user.nombre,
             telefono=user.telefono,
             estado=user.estado,
-            creado_en=user.creado_en
+            creado_en=user.creado_en,
+            foto_url=user.foto_url
         )
         
     elif role in ["operator", "analista"]:
@@ -224,10 +226,54 @@ def get_current_user_profile(
             nombre_completo=user.nombre_completo,
             suscriptor_id=user.suscriptor_id,
             activo=user.activo,
-            creado_en=user.creado_en
+            creado_en=user.creado_en,
+            foto_url=user.foto_url
         )
     
     raise HTTPException(status_code=400, detail="Tipo de usuario no reconocido")
+
+
+@router.post("/perfil/foto", summary="Subir o actualizar foto de perfil del usuario autenticado")
+async def upload_foto_perfil(
+    file: UploadFile = File(...),
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="El archivo subido debe ser una imagen (JPG, PNG, WEBP, GIF)")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    from uuid import uuid4
+    import os
+    filename = f"avatar_{token_data.sub}_{uuid4().hex[:8]}.{ext}"
+    file_path = os.path.join("uploads", "avatars", filename)
+
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    foto_url = f"/uploads/avatars/{filename}"
+
+    role = token_data.role
+    user_id = UUID(token_data.sub)
+
+    if role == "admin":
+        user = db.get(Administrador, user_id)
+    elif role == "empresa":
+        user = db.get(Suscriptor, user_id)
+    else:
+        user = db.get(CuentaUsuario, user_id)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    user.foto_url = foto_url
+    db.commit()
+
+    return {
+        "foto_url": foto_url,
+        "message": "Foto de perfil actualizada exitosamente"
+    }
 
 
 @router.post(
