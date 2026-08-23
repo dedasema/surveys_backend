@@ -13,6 +13,7 @@ from app.models.cuenta_usuario import CuentaUsuario
 from app.core.config import settings
 from datetime import datetime
 
+from uuid import UUID
 from app.services.subscription import (
     get_plan, list_planes, create_plan, update_plan, delete_plan,
     get_suscripcion, list_suscripciones, create_suscripcion,
@@ -20,11 +21,12 @@ from app.services.subscription import (
 )
 from app.schemas.subscription import (
     PlanSuscripcionCreate, PlanSuscripcionOut, PlanSuscripcionUpdate,
-    SuscripcionSuscriptorCreate, SuscripcionSuscriptorOut, SuscripcionSuscriptorUpdate
+    SuscripcionSuscriptorCreate, SuscripcionSuscriptorOut, SuscripcionSuscriptorUpdate,
+    MembresiaActualOut, PagoSuscriptorOut, PortalClienteOut
 )
-from app.models.subscription import SuscripcionSuscriptor
+from app.models.subscription import SuscripcionSuscriptor, PlanSuscripcion, PagoSuscriptor
 from app.models.suscriptor import Suscriptor
-from app.models.subscription import PlanSuscripcion
+from app.models.survey import CampanaEncuesta, EntregaEncuesta, PlantillaEncuesta
 
 
 # Configuración del router
@@ -460,3 +462,159 @@ def obtener_metricas_dashboard(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error al obtener métricas: {e}")
         raise HTTPException(status_code=500, detail="No se pudieron obtener las métricas del dashboard")
+
+
+# ---------------- MI SUSCRIPCIÓN Y CONSUMO ACTUAL ----------------
+
+@router.get(
+    "/actual",
+    response_model=MembresiaActualOut,
+    summary="Obtiene la membresía/suscripción activa y el consumo en tiempo real del suscriptor"
+)
+@router.get(
+    "/mi-suscripcion",
+    response_model=MembresiaActualOut,
+    include_in_schema=False
+)
+def get_mi_suscripcion(
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if token_data.role == "empresa":
+        suscriptor_id = UUID(token_data.sub)
+    elif token_data.role == "operator":
+        suscriptor_id = db.query(CuentaUsuario.suscriptor_id).filter(CuentaUsuario.id == UUID(token_data.sub)).scalar()
+        if not suscriptor_id:
+            raise HTTPException(status_code=404, detail="Suscriptor no encontrado")
+    else:
+        raise HTTPException(status_code=403, detail="Acceso permitido solo a suscriptores o sus operadores")
+
+    # Obtener suscripción activa
+    suscripcion = (
+        db.query(SuscripcionSuscriptor)
+        .filter(SuscripcionSuscriptor.suscriptor_id == suscriptor_id, SuscripcionSuscriptor.estado == "activo")
+        .order_by(SuscripcionSuscriptor.inicia_en.desc())
+        .first()
+    )
+
+    from app.services.plan_limits_service import get_plan_suscriptor
+    plan = get_plan_suscriptor(db, suscriptor_id)
+
+    # Calcular métricas de uso actual
+    now = datetime.now()
+    inicio_mes = datetime(now.year, now.month, 1)
+
+    plantillas_usadas = db.query(PlantillaEncuesta).filter(PlantillaEncuesta.suscriptor_id == suscriptor_id).count()
+    campanas_activas = db.query(CampanaEncuesta).filter(
+        CampanaEncuesta.suscriptor_id == suscriptor_id,
+        CampanaEncuesta.estado_id != 5  # No canceladas
+    ).count()
+    entregas_mes_actual = (
+        db.query(EntregaEncuesta)
+        .join(CampanaEncuesta)
+        .filter(CampanaEncuesta.suscriptor_id == suscriptor_id, EntregaEncuesta.creado_en >= inicio_mes)
+        .count()
+    )
+    operadores_activos = (
+        db.query(CuentaUsuario)
+        .filter(CuentaUsuario.suscriptor_id == suscriptor_id, CuentaUsuario.role == "operator")
+        .count()
+    )
+
+    dias_restantes = 30
+    fecha_fin = None
+    fecha_inicio = None
+    sub_id = "default_sub_id"
+    estado_sub = "activa"
+
+    if suscripcion:
+        sub_id = str(suscripcion.id)
+        estado_sub = suscripcion.estado
+        fecha_inicio = suscripcion.inicia_en
+        fecha_fin = suscripcion.expira_en
+        if fecha_fin:
+            delta = (fecha_fin.replace(tzinfo=None) - now).days
+            dias_restantes = max(0, delta)
+        else:
+            dias_restantes = 365  # Ilimitado / Enterprise
+
+    return {
+        "id": sub_id,
+        "estado": estado_sub,
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
+        "dias_restantes": dias_restantes,
+        "renovacion_automatica": True,
+        "plan": plan,
+        "uso_actual": {
+            "plantillas_usadas": plantillas_usadas,
+            "campanas_activas": campanas_activas,
+            "entregas_mes_actual": entregas_mes_actual,
+            "operadores_activos": operadores_activos
+        }
+    }
+
+
+# ---------------- HISTORIAL DE PAGOS ----------------
+
+@router.get(
+    "/historial-pagos",
+    response_model=list[PagoSuscriptorOut],
+    summary="Consulta el historial de transacciones y pagos del suscriptor"
+)
+def get_historial_pagos(
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if token_data.role == "empresa":
+        suscriptor_id = UUID(token_data.sub)
+    elif token_data.role == "operator":
+        suscriptor_id = db.query(CuentaUsuario.suscriptor_id).filter(CuentaUsuario.id == UUID(token_data.sub)).scalar()
+        if not suscriptor_id:
+            raise HTTPException(status_code=404, detail="Suscriptor no encontrado")
+    else:
+        raise HTTPException(status_code=403, detail="Acceso permitido solo a suscriptores")
+
+    pagos = (
+        db.query(PagoSuscriptor)
+        .filter(PagoSuscriptor.suscriptor_id == suscriptor_id)
+        .order_by(PagoSuscriptor.fecha.desc())
+        .all()
+    )
+
+    return pagos
+
+
+# ---------------- PORTAL DE CLIENTE STRIPE ----------------
+
+@router.post(
+    "/portal-cliente",
+    response_model=PortalClienteOut,
+    summary="Genera una sesión del portal de cliente de Stripe para gestión de tarjeta y facturación"
+)
+def create_customer_portal_session(
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if token_data.role != "empresa":
+        raise HTTPException(status_code=403, detail="Solo la cuenta principal de la empresa puede acceder al portal de facturación")
+
+    suscriptor_id = UUID(token_data.sub)
+    suscriptor = db.get(Suscriptor, suscriptor_id)
+    if not suscriptor:
+        raise HTTPException(status_code=404, detail="Suscriptor no encontrado")
+
+    if stripe is not None and getattr(settings, 'STRIPE_SECRET_KEY', None) and suscriptor.stripe_customer_id:
+        try:
+            _init_stripe()
+            return_url = f"{settings.clean_frontend_url}/dashboard"
+            portal_session = stripe.billing_portal.Session.create(
+                customer=suscriptor.stripe_customer_id,
+                return_url=return_url
+            )
+            return {"url": portal_session.url}
+        except Exception as exc:
+            print(f"Error creando sesión de customer portal en Stripe: {exc}")
+
+    # Fallback si no hay customer_id o Stripe no está configurado
+    return {"url": f"{settings.clean_frontend_url}/dashboard/suscripcion"}

@@ -81,6 +81,42 @@ class SuscripcionSuscriptorOut(SuscripcionSuscriptorBase):
     model_config = {"from_attributes": True}
 
 
+class UsoActualOut(BaseModel):
+    plantillas_usadas: int = 0
+    campanas_activas: int = 0
+    entregas_mes_actual: int = 0
+    operadores_activos: int = 0
+
+
+class MembresiaActualOut(BaseModel):
+    id: str
+    estado: str
+    fecha_inicio: Optional[datetime] = None
+    fecha_fin: Optional[datetime] = None
+    dias_restantes: int = 0
+    renovacion_automatica: bool = True
+    plan: PlanSuscripcionOut
+    uso_actual: UsoActualOut
+
+
+class PagoSuscriptorOut(BaseModel):
+    id: str
+    referencia_stripe: Optional[str] = None
+    monto: Decimal = Field(..., max_digits=10, decimal_places=2)
+    moneda: str = "usd"
+    fecha: datetime
+    plan_nombre: str
+    metodo_pago: str = "Tarjeta de Crédito / Débito"
+    estado: str = "completado"
+    recibo_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PortalClienteOut(BaseModel):
+    url: str
+
+
 class PlanesList(BaseModel):
     planes: List[PlanSuscripcionOut]
 

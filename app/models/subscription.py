@@ -48,3 +48,20 @@ class SuscripcionSuscriptor(Base):
 
     suscriptor = relationship("Suscriptor")
     plan       = relationship("PlanSuscripcion")
+
+
+class PagoSuscriptor(Base):
+    __tablename__ = "pago_suscriptor"
+
+    id                = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    suscriptor_id     = Column(PGUUID(as_uuid=True), ForeignKey("suscriptor.id", ondelete="CASCADE"), nullable=False)
+    referencia_stripe = Column(Text, nullable=True)
+    monto             = Column(Numeric(10, 2), nullable=False)
+    moneda            = Column(Text, nullable=False, default="usd")
+    fecha             = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    plan_nombre       = Column(Text, nullable=False)
+    metodo_pago       = Column(Text, nullable=False, default="Tarjeta de Crédito / Débito")
+    estado            = Column(Text, nullable=False, default="completado")
+    recibo_url        = Column(Text, nullable=True)
+
+    suscriptor = relationship("Suscriptor")
