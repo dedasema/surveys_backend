@@ -292,3 +292,69 @@ def asignar_plan_suscriptor_endpoint(
     db.commit()
 
     return get_suscriptor_detail_endpoint(suscriptor_id, db)
+
+
+# 7. IMPERSONACIÓN DE CUENTA (LOG IN AS CUSTOMER PARA SOPORTE)
+@router.post("/{suscriptor_id}/impersonate", summary="Inicia sesión temporal como la empresa (Impersonación para Soporte)")
+def impersonate_suscriptor_endpoint(
+    suscriptor_id: UUID,
+    admin_token: TokenData = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    suscriptor = db.get(Suscriptor, suscriptor_id)
+    if not suscriptor:
+        cuenta = db.get(CuentaUsuario, suscriptor_id)
+        if not cuenta:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        target_id = str(cuenta.suscriptor_id or cuenta.id)
+        target_email = cuenta.email
+    else:
+        target_id = str(suscriptor.id)
+        target_email = suscriptor.email
+
+    from app.core.security import create_access_token
+    empresa_token = create_access_token(subject=target_id, role="empresa")
+
+    return {
+        "access_token": empresa_token,
+        "token_type": "bearer",
+        "impersonated_email": target_email,
+        "original_admin_id": admin_token.sub,
+        "message": "Token de soporte generado exitosamente. Redirigir al dashboard de la empresa."
+    }
+
+
+# 8. CONTROL Y DESGLOSE DE CONSUMO DE IA Y RECURSOS
+@router.get("/{suscriptor_id}/consumo-ia", summary="Obtiene el desglose detallado de consumo de IA y recursos de la empresa")
+def get_consumo_ia_endpoint(
+    suscriptor_id: UUID,
+    db: Session = Depends(get_db)
+):
+    total_ocr = (
+        db.query(EntregaEncuesta)
+        .join(CampanaEncuesta)
+        .filter(CampanaEncuesta.suscriptor_id == suscriptor_id, EntregaEncuesta.canal_id == 4)
+        .count()
+    )
+    total_audio = (
+        db.query(EntregaEncuesta)
+        .join(CampanaEncuesta)
+        .filter(CampanaEncuesta.suscriptor_id == suscriptor_id, EntregaEncuesta.canal_id == 5)
+        .count()
+    )
+
+    estimacion_tokens_ocr = total_ocr * 1200
+    estimacion_tokens_audio = total_audio * 4500
+    total_tokens = estimacion_tokens_ocr + estimacion_tokens_audio
+    almacenamiento_mb = round((total_ocr * 0.8) + (total_audio * 3.5), 2)
+
+    return {
+        "suscriptor_id": str(suscriptor_id),
+        "total_peticiones_ocr": total_ocr,
+        "total_peticiones_audio": total_audio,
+        "estimacion_tokens_totales": total_tokens,
+        "tokens_ocr": estimacion_tokens_ocr,
+        "tokens_audio": estimacion_tokens_audio,
+        "almacenamiento_estimado_mb": almacenamiento_mb,
+        "costo_estimado_usd": round(total_tokens * 0.0000005, 4)
+    }
