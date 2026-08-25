@@ -209,7 +209,7 @@ async def startup_event():
                 db.add(TipoPregunta(nombre=t_name))
 
         # Canales
-        canales_default = ["web", "email", "whatsapp", "vapi_voz", "qr", "link_directo"]
+        canales_default = ["web", "email", "whatsapp", "qr", "link_directo"]
         for c_name in canales_default:
             if not db.query(Canal).filter_by(nombre=c_name).first():
                 db.add(Canal(nombre=c_name))
@@ -337,7 +337,7 @@ from app.modules.respuestas.infrastructure.router import (
     respuestas_private_router,
     encuestas_public_router,
 )
-from app.modules.channels.infrastructure.router import whatsapp_router, vapi_router
+from app.modules.channels.infrastructure.router import whatsapp_router
 from app.modules.analytics.infrastructure.router import (
     analytics_router,
     nlp_router,
@@ -363,7 +363,6 @@ app.include_router(respuestas_public_router)
 app.include_router(respuestas_private_router)
 app.include_router(public_entregas_router)
 app.include_router(whatsapp_router)
-app.include_router(vapi_router)
 app.include_router(analytics_router)
 app.include_router(nlp_router)
 app.include_router(encuestas_public_router)

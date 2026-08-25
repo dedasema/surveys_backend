@@ -29,7 +29,6 @@ from app.models.suscriptor import Suscriptor
 from app.services import whatsapp_service as ws
 from app.services.email_service import enviar_email
 from app.services.shared_service import get_entrega_con_plantilla
-from app.services.vapi_service import crear_llamada_encuesta
 from app.schemas.entregas_schema import EntregaCreate, EntregaUpdate
 
 logger = logging.getLogger(__name__)
@@ -295,44 +294,7 @@ async def create_entrega(
                 detail=f"Error iniciando conversación: {exc}",
             ) from exc
 
-    # ------------------------------------------------------------------ #
-    # CANAL VAPI (LLAMADA)                                               #
-    # ------------------------------------------------------------------ #
-    elif payload.canal_id == 3:
-        try:
-            entrega = get_entrega_con_plantilla(db, entrega.id)
-            if not entrega.destinatario.telefono:
-                raise ValueError("El destinatario no tiene teléfono")
 
-            preguntas: List[dict] = []
-            if entrega.campana and entrega.campana.plantilla:
-                for p in entrega.campana.plantilla.preguntas:
-                    preguntas.append(
-                        {
-                            "id": str(p.id),
-                            "texto": p.texto,
-                            "tipo_pregunta_id": p.tipo_pregunta_id,
-                            "obligatorio": p.obligatorio,
-                            "opciones": [
-                                {"id": str(o.id), "texto": o.texto, "valor": o.valor}
-                                for o in getattr(p, "opciones", [])
-                            ],
-                        }
-                    )
-
-            await crear_llamada_encuesta(
-                db=db,
-                entrega_id=entrega.id,
-                telefono=entrega.destinatario.telefono,
-                nombre_destinatario=entrega.destinatario.nombre or "Cliente",
-                campana_nombre=entrega.campana.nombre,
-                preguntas=preguntas,
-            )
-
-            entrega.estado_id = ESTADO_ENVIADO
-            entrega.enviado_en = datetime.now()
-            db.commit()
-            db.refresh(entrega)
 
         except Exception as exc:
             mark_as_failed(db, entrega.id, str(exc))

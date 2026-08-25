@@ -91,7 +91,6 @@ class EntregaEncuesta(Base):
     destinatario = relationship("Destinatario")
     respuestas = relationship("RespuestaEncuesta", back_populates="entrega", cascade="all, delete-orphan")
     conversacion = relationship("ConversacionEncuesta", back_populates="entrega", cascade="all, delete-orphan")
-    vapi_calls = relationship("VapiCallRelation", back_populates="entrega", cascade="all, delete-orphan")
 
 class RespuestaEncuesta(Base):
     __tablename__ = "respuesta_encuesta"
@@ -128,18 +127,6 @@ class ConversacionEncuesta(Base):
 
     entrega = relationship("EntregaEncuesta", back_populates="conversacion")
     pregunta_actual = relationship("PreguntaEncuesta")
-
-class VapiCallRelation(Base):
-    """Relación entre llamadas de Vapi y entregas de encuesta"""
-    __tablename__ = "vapi_call_relation"
-    
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    entrega_id = Column(PGUUID(as_uuid=True), ForeignKey("entrega_encuesta.id", ondelete="CASCADE"), nullable=False)
-    call_id = Column(String(255), nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    
-    # Relación
-    entrega = relationship("EntregaEncuesta", back_populates="vapi_calls")
 
 class RespuestaTemp(Base):
     """

@@ -147,8 +147,7 @@ class DatabaseSeeder:
             canales = [
                 {"id": 1, "nombre": "email"},
                 {"id": 2, "nombre": "whatsapp"},
-                {"id": 3, "nombre": "sms"},
-                {"id": 4, "nombre": "vapi"}
+                {"id": 3, "nombre": "sms"}
             ]
             
             for canal_data in canales:
