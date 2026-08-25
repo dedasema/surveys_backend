@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey, Integer
+from sqlalchemy import Column, Text, TIMESTAMP, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -13,7 +13,7 @@ class Suscriptor(Base):
     password_hash = Column(Text, nullable=False)
     rol_id = Column(Integer, ForeignKey("rol.id"), nullable=False, default=1)
     estado = Column(Text, default="inactivo")
-    creado_en = Column(TIMESTAMP(timezone=True), server_default="now()")
+    creado_en = Column(TIMESTAMP(timezone=True), server_default=func.now())
     stripe_customer_id = Column(Text, nullable=True)
     foto_url = Column(Text, nullable=True)
 

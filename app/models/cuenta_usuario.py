@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Text, Boolean, TIMESTAMP, ForeignKey, Integer
+from sqlalchemy import Column, Text, Boolean, TIMESTAMP, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -13,7 +13,7 @@ class CuentaUsuario(Base):
     nombre_completo = Column(Text, nullable=False)
     rol_id = Column(Integer, ForeignKey("rol.id"), nullable=False, default=2)
     activo = Column(Boolean, default=True)
-    creado_en = Column(TIMESTAMP(timezone=True), server_default="now()")
+    creado_en = Column(TIMESTAMP(timezone=True), server_default=func.now())
     foto_url = Column(Text, nullable=True)
 
     suscriptor = relationship("Suscriptor", back_populates="usuarios")

@@ -1,30 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import engine, Base
-from app.routers import auth, catalogos, subscription, plantillas_router, campanas_router, preguntas_router
-from app.routers import opciones_router, entregas_router, destinatarios_router
-from app.routers.respuestas_router import public_router as respuestas_public_router
-from app.routers.respuestas_router import private_router as respuestas_private_router
-from app.routers.entregas_router import public_router as entregas_public_router
-from app.routers import whatsapp_router
-from app.routers import vapi_router
-from app.routers import analytics_router
-from app.routers import nlp_router
-from app.routers import encuestas_router
-from app.routers import seeder_router
-from app.routers import pdf_router
-from app.routers import dashboard_router
-from app.routers import chat_router
-from app.routers import auditoria_router
 from app.models.audit_log import AuditLog
-
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 import os
 from fastapi.staticfiles import StaticFiles
 
+from app.shared.infrastructure.exception_handlers import register_domain_exception_handlers
+
 app = FastAPI(title="Mi API SaaS", version="0.1.0")
+register_domain_exception_handlers(app)
 
 os.makedirs("uploads/avatars", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
@@ -329,34 +316,62 @@ async def startup_event():
 
 
 
-from app.routers import admin_suscriptores_router, anuncios_router
+# ────────────────── Modular Architecture Routers ──────────────────
+from app.modules.auth.infrastructure.router import router as auth_router
+from app.modules.catalogos.infrastructure.router import (
+    catalogos_router,
+    anuncios_admin_router,
+    anuncios_public_router,
+)
+from app.modules.subscription.infrastructure.router import router as subscription_router
+from app.modules.admin.infrastructure.router import router as admin_router
+from app.modules.campanas.infrastructure.router import router as campanas_router
+from app.modules.plantillas.infrastructure.router import router as plantillas_router
+from app.modules.entregas.infrastructure.router import (
+    entregas_router,
+    public_entregas_router,
+    destinatarios_router,
+)
+from app.modules.respuestas.infrastructure.router import (
+    respuestas_public_router,
+    respuestas_private_router,
+    encuestas_public_router,
+)
+from app.modules.channels.infrastructure.router import whatsapp_router, vapi_router
+from app.modules.analytics.infrastructure.router import (
+    analytics_router,
+    nlp_router,
+    pdf_router,
+    dashboard_router,
+)
+from app.modules.ai_assistant.infrastructure.router import router as chat_router
+from app.modules.auditoria.infrastructure.router import router as auditoria_router
+from app.routers import seeder_router
 
-# Registrar todos los routers
-app.include_router(auth.router)
-app.include_router(catalogos.router)
-app.include_router(subscription.router)
-app.include_router(admin_suscriptores_router.router)
-app.include_router(anuncios_router.admin_router)
-app.include_router(anuncios_router.public_router)
-app.include_router(plantillas_router.router)
-app.include_router(campanas_router.router)
-app.include_router(preguntas_router.router)
-app.include_router(opciones_router.router)
-app.include_router(entregas_router.router)
-app.include_router(destinatarios_router.router)
+# Registrar routers modulares
+app.include_router(auth_router)
+app.include_router(catalogos_router)
+app.include_router(subscription_router)
+app.include_router(admin_router)
+app.include_router(anuncios_admin_router)
+app.include_router(anuncios_public_router)
+app.include_router(plantillas_router)
+app.include_router(campanas_router)
+app.include_router(entregas_router)
+app.include_router(destinatarios_router)
 app.include_router(respuestas_public_router)
 app.include_router(respuestas_private_router)
-app.include_router(entregas_public_router)
-app.include_router(whatsapp_router.router)
-app.include_router(vapi_router.router)
-app.include_router(analytics_router.router)
-app.include_router(nlp_router.router)
-app.include_router(encuestas_router.router)
-app.include_router(pdf_router.router)
+app.include_router(public_entregas_router)
+app.include_router(whatsapp_router)
+app.include_router(vapi_router)
+app.include_router(analytics_router)
+app.include_router(nlp_router)
+app.include_router(encuestas_public_router)
+app.include_router(pdf_router)
 app.include_router(seeder_router.router)
-app.include_router(dashboard_router.router)
-app.include_router(chat_router.router)
-app.include_router(auditoria_router.router)
+app.include_router(dashboard_router)
+app.include_router(chat_router)
+app.include_router(auditoria_router)
 
 @app.get("/", summary="Health check")
 async def health_check():
