@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password, create_access_token, get_current_user
+from app.core.security import (
+    hash_password, verify_password, create_access_token, get_current_user,
+    create_refresh_token, rotate_refresh_token, revoke_refresh_token
+)
 from app.core.config import settings
 
 from app.models.catalogos import Rol
@@ -18,7 +21,7 @@ from app.schemas.auth import (
     AdminCreate, AdminOut, AdminProfileOut, AdminUpdateRequest, ForgotPasswordRequest, LoginRequest, OperatorProfileOut, OperatorUpdateRequest, ResetPasswordRequest,
     SuscriptorCreate, SuscriptorOut,
     CuentaUsuarioCreate, CuentaUsuarioOut, SuscriptorProfileOut, SuscriptorUpdateRequest,
-    Token, UserProfileOut, TokenData
+    Token, UserProfileOut, TokenData, RefreshTokenRequest, LogoutRequest
 )
 
 from uuid import UUID
@@ -163,10 +166,80 @@ def login(
             detail="Credenciales invÃƒÂ¡lidas"
         )
 
-    # obtengo el nombre del rol para el token
+    # obtengo el nombre del rol y permisos para el token
     rol = db.get(Rol, user.rol_id)
-    token = create_access_token(subject=str(user.id), role=rol.nombre)
-    return {"access_token": token, "token_type": "bearer"}
+    permisos_list = [p.codigo for p in rol.permisos] if rol and rol.permisos else []
+    
+    access_token = create_access_token(
+        subject=str(user.id),
+        role=rol.nombre if rol else "usuario",
+        permisos=permisos_list
+    )
+    refresh_token = create_refresh_token(db, user.id)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_access_token(
+    payload: RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Renueva el access_token y rota el refresh_token de forma segura.
+    Si el refresh_token fue revocado o expiró, retorna 401.
+    """
+    db_token, nuevo_refresh_token = rotate_refresh_token(db, payload.refresh_token)
+
+    # Identificar el usuario
+    user = db.query(Administrador).filter_by(id=db_token.user_id).first()
+    if not user:
+        user = db.query(Suscriptor).filter_by(id=db_token.user_id).first()
+    if not user:
+        user = db.query(CuentaUsuario).filter_by(id=db_token.user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario asociado al token no encontrado"
+        )
+
+    rol = db.get(Rol, user.rol_id)
+    permisos_list = [p.codigo for p in rol.permisos] if rol and rol.permisos else []
+
+    nuevo_access_token = create_access_token(
+        subject=str(user.id),
+        role=rol.nombre if rol else "usuario",
+        permisos=permisos_list
+    )
+
+    return {
+        "access_token": nuevo_access_token,
+        "refresh_token": nuevo_refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+def logout(
+    payload: LogoutRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Revoca activamente el refresh_token en el servidor, garantizando que
+    no pueda ser utilizado para renovar sesiones (logout real).
+    """
+    revocado = revoke_refresh_token(db, payload.refresh_token)
+    return {
+        "mensaje": "Sesión cerrada y refresh token revocado con éxito" if revocado else "Refresh token no encontrado o ya revocado",
+        "revocado": revocado
+    }
 
 
 @router.get("/me", response_model=UserProfileOut)

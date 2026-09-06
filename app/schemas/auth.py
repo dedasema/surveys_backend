@@ -51,12 +51,20 @@ class CuentaUsuarioOut(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+    expires_in: int = 1800
 
 class TokenData(BaseModel):
-    sub: Optional[str]
-    role: Optional[str]
+    sub: Optional[str] = None
+    role: Optional[str] = None
+    permisos: List[str] = []
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
 
 class LoginRequest(BaseModel):
     email: EmailStr

@@ -27,6 +27,10 @@ if not SECRET_KEY or not isinstance(SECRET_KEY, str):
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
+import hashlib
+import secrets
+from datetime import timezone
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer()
 
@@ -36,11 +40,92 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(subject: str, role: str) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"sub": subject, "role": role, "exp": expire}
-    # SECRET_KEY ya está garantizado como str
+def hash_token(raw_token: str) -> str:
+    """Calcula el hash SHA-256 de un token opaco para almacenamiento seguro"""
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+def create_access_token(subject: str, role: str, permisos: list[str] = None) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {
+        "sub": subject,
+        "role": role,
+        "permisos": permisos or [],
+        "exp": expire
+    }
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def create_refresh_token(db: Session, user_id: UUID) -> str:
+    """Genera un refresh token criptográfico, guarda su hash en BD y devuelve el token en texto plano"""
+    from app.models.refresh_token import RefreshToken
+    from app.core.config import settings
+
+    raw_token = secrets.token_urlsafe(64)
+    token_hash = hash_token(raw_token)
+    expira_en = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+
+    refresh_obj = RefreshToken(
+        user_id=user_id,
+        token_hash=token_hash,
+        revocado=False,
+        expira_en=expira_en,
+        creado_en=datetime.now(timezone.utc)
+    )
+    db.add(refresh_obj)
+    db.commit()
+    db.refresh(refresh_obj)
+    return raw_token
+
+def rotate_refresh_token(db: Session, raw_token: str) -> tuple[any, str]:
+    """Valida el refresh token, lo revoca e inmediatamente emite uno nuevo (rotación segura)"""
+    from app.models.refresh_token import RefreshToken
+    
+    token_hash = hash_token(raw_token)
+    ahora = datetime.now(timezone.utc)
+
+    db_token = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == token_hash
+    ).first()
+
+    if not db_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token no encontrado"
+        )
+    if db_token.revocado:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="El refresh token ha sido revocado"
+        )
+    
+    expira_comparable = db_token.expira_en
+    if expira_comparable.tzinfo is None:
+        expira_comparable = expira_comparable.replace(tzinfo=timezone.utc)
+
+    if expira_comparable < ahora:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="El refresh token ha expirado"
+        )
+
+    # Revocamos el token actual
+    db_token.revocado = True
+    db.commit()
+
+    # Emitimos nuevo refresh token
+    nuevo_raw = create_refresh_token(db, db_token.user_id)
+    return db_token, nuevo_raw
+
+def revoke_refresh_token(db: Session, raw_token: str) -> bool:
+    """Revoca un refresh token en el servidor para forzar un logout real"""
+    from app.models.refresh_token import RefreshToken
+    
+    token_hash = hash_token(raw_token)
+    db_token = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    if db_token:
+        db_token.revocado = True
+        db.commit()
+        return True
+    return False
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -56,9 +141,10 @@ def get_current_user(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         role_name: str = payload.get("role")
+        permisos: list = payload.get("permisos", [])
         if user_id is None or role_name is None:
             raise credentials_exception
-        return TokenData(sub=user_id, role=role_name)
+        return TokenData(sub=user_id, role=role_name, permisos=permisos)
     except JWTError:
         raise credentials_exception
 
@@ -154,6 +240,9 @@ def require_permission(permission_code: str):
         db: Session = Depends(get_db)
     ) -> TokenData:
         if token_data.role == "admin":
+            return token_data
+
+        if token_data.permisos and permission_code in token_data.permisos:
             return token_data
 
         from app.models.catalogos import Rol

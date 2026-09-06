@@ -57,11 +57,18 @@ async def startup_event():
     import app.models.cuenta_usuario
     import app.models.subscription
     import app.models.survey
+    import app.models.refresh_token
 
     # Auto-create missing tables and migrate schema in database
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
+            # Extensión pgvector (si está soportada en el servidor PostgreSQL)
+            try:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            except Exception as e_vec:
+                print(f"Nota: pgvector no pudo ser inicializado en PostgreSQL local/remoto ({e_vec})")
+
             conn.execute(text("ALTER TABLE rol ADD COLUMN IF NOT EXISTS descripcion VARCHAR;"))
             
             # Migraciones para plan_suscripcion
@@ -85,6 +92,10 @@ async def startup_event():
             conn.execute(text("ALTER TABLE suscriptor ADD COLUMN IF NOT EXISTS foto_url TEXT;"))
             conn.execute(text("ALTER TABLE cuenta_usuario ADD COLUMN IF NOT EXISTS foto_url TEXT;"))
             conn.execute(text("ALTER TABLE administrador ADD COLUMN IF NOT EXISTS foto_url TEXT;"))
+
+            # Migraciones para integridad criptográfica Hash-Chain (RNF8)
+            conn.execute(text("ALTER TABLE respuesta_encuesta ADD COLUMN IF NOT EXISTS hash VARCHAR(64);"))
+            conn.execute(text("ALTER TABLE respuesta_encuesta ADD COLUMN IF NOT EXISTS hash_anterior VARCHAR(64);"))
 
             conn.commit()
 
@@ -347,6 +358,8 @@ from app.modules.analytics.infrastructure.router import (
 from app.modules.ai_assistant.infrastructure.router import router as chat_router
 from app.modules.auditoria.infrastructure.router import router as auditoria_router
 from app.routers import seeder_router
+from app.routers.ingesta_router import router as ingesta_router
+from app.routers.integridad_router import router as integridad_router
 
 # Registrar routers modulares
 app.include_router(auth_router)
@@ -371,6 +384,8 @@ app.include_router(seeder_router.router)
 app.include_router(dashboard_router)
 app.include_router(chat_router)
 app.include_router(auditoria_router)
+app.include_router(ingesta_router)
+app.include_router(integridad_router)
 
 @app.get("/", summary="Health check")
 async def health_check():

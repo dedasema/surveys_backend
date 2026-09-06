@@ -99,6 +99,8 @@ class RespuestaEncuesta(Base):
     recibido_en = Column(TIMESTAMP(timezone=True), server_default=func.now())
     puntuacion  = Column(Numeric(5,2))
     raw_payload = Column(JSONB)
+    hash        = Column(String(64), nullable=True, index=True)
+    hash_anterior = Column(String(64), nullable=True)
 
     # Relaciones
     entrega = relationship("EntregaEncuesta", back_populates="respuestas")

@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     )
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super_secret_default_key_2026")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     WHAPI_TOKEN: Optional[str] = ""
     WHAPI_API_URL: str = "https://gate.whapi.cloud"
     WHATSAPP_PHONE_ID: Optional[str] = ""
