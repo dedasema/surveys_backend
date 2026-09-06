@@ -14,6 +14,7 @@ app = FastAPI(title="Mi API SaaS", version="0.1.0")
 register_domain_exception_handlers(app)
 
 os.makedirs("uploads/avatars", exist_ok=True)
+os.makedirs("uploads/audio", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 origins = [
@@ -58,6 +59,8 @@ async def startup_event():
     import app.models.subscription
     import app.models.survey
     import app.models.refresh_token
+    import app.models.regla_ramificacion
+    import app.models.audio_respuesta
 
     # Auto-create missing tables and migrate schema in database
     try:
@@ -96,6 +99,10 @@ async def startup_event():
             # Migraciones para integridad criptográfica Hash-Chain (RNF8)
             conn.execute(text("ALTER TABLE respuesta_encuesta ADD COLUMN IF NOT EXISTS hash VARCHAR(64);"))
             conn.execute(text("ALTER TABLE respuesta_encuesta ADD COLUMN IF NOT EXISTS hash_anterior VARCHAR(64);"))
+
+            # Migraciones para motor de ramificación y preguntas generativas (RF17, RF17b)
+            conn.execute(text("ALTER TABLE conversacion_encuesta ADD COLUMN IF NOT EXISTS preguntas_generativas_usadas INTEGER NOT NULL DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE conversacion_encuesta ADD COLUMN IF NOT EXISTS pregunta_generativa_activa TEXT;"))
 
             conn.commit()
 
@@ -360,6 +367,8 @@ from app.modules.auditoria.infrastructure.router import router as auditoria_rout
 from app.routers import seeder_router
 from app.routers.ingesta_router import router as ingesta_router
 from app.routers.integridad_router import router as integridad_router
+from app.routers.audio_respuestas_router import router as audio_respuestas_router
+from app.routers.encuestas_adaptativas_router import router as encuestas_adaptativas_router
 
 # Registrar routers modulares
 app.include_router(auth_router)
@@ -386,6 +395,8 @@ app.include_router(chat_router)
 app.include_router(auditoria_router)
 app.include_router(ingesta_router)
 app.include_router(integridad_router)
+app.include_router(audio_respuestas_router)
+app.include_router(encuestas_adaptativas_router)
 
 @app.get("/", summary="Health check")
 async def health_check():

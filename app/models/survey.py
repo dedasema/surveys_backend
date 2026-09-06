@@ -125,6 +125,8 @@ class ConversacionEncuesta(Base):
     historial = Column(JSONB, default=list)
     pregunta_actual_id = Column(PGUUID(as_uuid=True), ForeignKey("pregunta_encuesta.id"))
     completada = Column(Boolean, default=False)
+    preguntas_generativas_usadas = Column(Integer, default=0, nullable=False)
+    pregunta_generativa_activa = Column(Text, nullable=True)
     creado_en = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     entrega = relationship("EntregaEncuesta", back_populates="conversacion")

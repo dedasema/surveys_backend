@@ -75,3 +75,10 @@ __pydantic__/
 *.dump
 *.bak
 *.tmp
+
+# Uploads
+uploads/audio/*
+!uploads/audio/.gitkeep
+uploads/avatars/*
+!uploads/avatars/.gitkeep
+uploads/*
