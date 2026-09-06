@@ -5,6 +5,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 from sqlalchemy.orm import relationship
 
@@ -115,6 +116,7 @@ class RespuestaPregunta(Base):
     numero       = Column(Numeric)
     opcion_id    = Column(PGUUID(as_uuid=True), ForeignKey("opcion_encuesta.id", ondelete="SET NULL"))
     metadatos    = Column(JSONB, default=lambda: {}) 
+    embedding    = Column(Vector(768), nullable=True)
 
     respuesta = relationship("RespuestaEncuesta", back_populates="respuestas_preguntas")
 

@@ -13,6 +13,7 @@ from app.core.security import create_access_token
 
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.compiler import compiles
+from pgvector.sqlalchemy import Vector
 
 @compiles(JSONB, "sqlite")
 def compile_jsonb_sqlite(type_, compiler, **kw):
@@ -21,6 +22,10 @@ def compile_jsonb_sqlite(type_, compiler, **kw):
 @compiles(UUID, "sqlite")
 def compile_uuid_sqlite(type_, compiler, **kw):
     return "VARCHAR(36)"
+
+@compiles(Vector, "sqlite")
+def compile_vector_sqlite(type_, compiler, **kw):
+    return "TEXT"
 
 # Usar base de datos SQLite en memoria para tests aislados
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
