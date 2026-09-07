@@ -51,6 +51,9 @@ def enqueue_channel_message(
     Normaliza el mensaje de entrada (Gmail, OCR físico, Voz) y lo encola de inmediato
     para procesamiento asíncrono sin bloquear el canal de origen.
     """
+    from app.services.quota_service import quota_tracker
+    quota_tracker.registrar_ingesta(canal)
+
     task_id = str(uuid.uuid4())
     task_data = {
         "id": task_id,

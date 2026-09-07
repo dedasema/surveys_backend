@@ -31,10 +31,18 @@ async def generar_embedding(texto: str) -> List[float]:
         }
     }
 
+    from app.services.quota_service import quota_tracker
+
+    if quota_tracker.esta_en_espera_por_cuota():
+        logger.warning("Gemini embeddings omitido preventivamente: en espera por cuota")
+        return _generar_embedding_fallback(texto)
+
+    start_ts = quota_tracker.registrar_inicio(tipo="embeddings")
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             res = await client.post(url, json=payload)
             if res.status_code == 200:
+                quota_tracker.registrar_exito(start_ts, tipo="embeddings")
                 data = res.json()
                 values = data.get("embedding", {}).get("values", [])
                 if values and len(values) == 768:
@@ -44,9 +52,14 @@ async def generar_embedding(texto: str) -> List[float]:
                     if len(values) < 768:
                         return values + [0.0] * (768 - len(values))
                     return values[:768]
+            elif res.status_code == 429:
+                quota_tracker.registrar_429(start_ts, tipo="embeddings", cooldown_segundos=15, modelo=EMBEDDING_MODEL)
+                logger.warning("Cuota excedida en Gemini embeddings (429)")
             else:
+                quota_tracker.registrar_error(start_ts, tipo="embeddings")
                 logger.warning("Error llamando a Gemini embeddings (%s): %s", res.status_code, res.text)
     except Exception as e:
+        quota_tracker.registrar_error(start_ts, tipo="embeddings")
         logger.error("Excepción al generar embedding con Gemini: %s", e)
 
     # Fallback pseudo-determinístico para entornos de testing / offline

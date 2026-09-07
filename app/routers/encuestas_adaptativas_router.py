@@ -307,6 +307,22 @@ async def responder_adaptativo(
         vincular_hash_cadena(db, nueva_respuesta, campana_id=entrega.campana_id)
         db.commit()
 
+        # Emitir evento en tiempo real vía WebSocket (RF24)
+        try:
+            from app.services.websocket_manager import ws_manager
+            await ws_manager.broadcast(
+                "nueva_respuesta",
+                {
+                    "respuesta_id": str(nueva_respuesta.id),
+                    "entrega_id": str(entrega.id),
+                    "puntuacion": float(promedio) if promedio is not None else None,
+                    "hash": nueva_respuesta.hash
+                },
+                campana_id=str(entrega.campana_id)
+            )
+        except Exception as e_ws:
+            logger.warning("No se pudo emitir evento WebSocket nueva_respuesta: %s", e_ws)
+
         return {
             "fin_encuesta": True,
             "es_generativa": False,

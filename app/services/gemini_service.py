@@ -19,41 +19,70 @@ MODELS_TO_TRY = [
     "gemini-3.6-flash",        # Verified — newest available
 ]
 
-async def _execute_gemini_request(client: httpx.AsyncClient, api_key: str, payload: dict) -> httpx.Response:
+async def _execute_gemini_request(
+    client: httpx.AsyncClient,
+    api_key: str,
+    payload: dict,
+    tipo: str = "texto"
+) -> httpx.Response:
     """
-    Intenta ejecutar la petición contra Gemini con presupuesto acotado de latencia (máximo 1 reintento de 1.5s).
+    Intenta ejecutar la petición contra Gemini con presupuesto acotado de latencia (máximo 1 reintento de 1.5s)
+    e instrumentación de control de cuota (RNF7) y observabilidad (RNF5).
     """
     import asyncio
+    from app.services.quota_service import quota_tracker
+
+    if quota_tracker.esta_en_espera_por_cuota():
+        segundos = quota_tracker.segundos_restantes_espera()
+        logger.warning("Llamada rechazada preventivamente: Gemini en espera por cuota (%ds restantes)", segundos)
+        raise RuntimeError(f"Gemini API en espera por cuota. Reintente en {segundos} segundos.")
+
+    start_ts = quota_tracker.registrar_inicio(tipo=tipo)
     last_res = None
     
     # 1. Primer intento con los modelos rápidos
     for model in MODELS_TO_TRY:
         url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-        res = await client.post(url, json=payload)
-        if res.status_code == 200:
-            return res
-        last_res = res
+        try:
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                quota_tracker.registrar_exito(start_ts, tipo=tipo)
+                return res
+            if res.status_code == 429:
+                quota_tracker.registrar_429(start_ts, tipo=tipo, cooldown_segundos=15, modelo=model)
+            last_res = res
+        except Exception:
+            pass
 
     # 2. Si el servidor respondió 429 (límite de ráfaga), hacer UN solo reintento de 1.5s
     if last_res and last_res.status_code == 429:
         await asyncio.sleep(1.5)
         for model in MODELS_TO_TRY:
             url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-            res = await client.post(url, json=payload)
-            if res.status_code == 200:
-                return res
-            last_res = res
+            try:
+                res = await client.post(url, json=payload)
+                if res.status_code == 200:
+                    quota_tracker.registrar_exito(start_ts, tipo=tipo)
+                    return res
+                last_res = res
+            except Exception:
+                pass
 
     # 3. Si falló por formato de herramientas (tools), reintentar mensaje plano sin tools
     if "tools" in payload:
         payload_no_tools = {k: v for k, v in payload.items() if k != "tools"}
         for model in MODELS_TO_TRY:
             url = f"{GEMINI_BASE_URL}/{model}:generateContent?key={api_key}"
-            res = await client.post(url, json=payload_no_tools)
-            if res.status_code == 200:
-                return res
-            last_res = res
+            try:
+                res = await client.post(url, json=payload_no_tools)
+                if res.status_code == 200:
+                    quota_tracker.registrar_exito(start_ts, tipo=tipo)
+                    return res
+                last_res = res
+            except Exception:
+                pass
 
+    quota_tracker.registrar_error(start_ts, tipo=tipo)
     return last_res
 
 async def call_gemini_text(prompt: str, system_instruction: str = "") -> str:
@@ -162,7 +191,7 @@ async def call_gemini_chat_with_tools(
             payload["tools"] = [{"functionDeclarations": function_declarations}]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await _execute_gemini_request(client, api_key, payload)
+        res = await _execute_gemini_request(client, api_key, payload, tipo="tools")
         if res.status_code != 200:
             if res.status_code == 429:
                 raise RuntimeError("La cuota gratuita de tu API Key de Gemini se ha pausado por límite de peticiones. Por favor reintenta en 30 segundos.")

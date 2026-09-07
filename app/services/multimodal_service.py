@@ -80,7 +80,7 @@ async def interpretar_multimodal(
     }
 
     async with httpx.AsyncClient(timeout=45.0) as client:
-        res = await _execute_gemini_request(client, api_key, payload)
+        res = await _execute_gemini_request(client, api_key, payload, tipo="multimodal")
         if res.status_code != 200:
             if res.status_code == 429:
                 raise RuntimeError("Cuota temporal de Gemini alcanzada. Reintente en unos segundos.")

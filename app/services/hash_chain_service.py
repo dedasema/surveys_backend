@@ -116,10 +116,17 @@ def verificar_integridad_cadena(
 
         hash_previo_esperado = resp.hash or hash_recalculado
 
+    es_integro = len(errores) == 0
+    try:
+        from app.services.quota_service import quota_tracker
+        quota_tracker.registrar_verificacion_integridad(integro=es_integro, total_alteraciones=len(errores))
+    except Exception:
+        pass
+
     return {
         "campana_id": str(campana_id) if campana_id else "global",
         "total_respuestas": len(respuestas),
-        "integro": len(errores) == 0,
+        "integro": es_integro,
         "ultimo_hash": respuestas[-1].hash if respuestas else None,
         "errores": errores
     }

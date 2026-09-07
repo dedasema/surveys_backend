@@ -126,4 +126,24 @@ Analiza el caso, razona tu decisión paso a paso y devuelve ÚNICAMENTE un JSON 
     db.commit()
     db.refresh(decision)
 
+    # Emitir evento por WebSocket (RF24)
+    try:
+        from app.services.websocket_manager import ws_manager
+        await ws_manager.broadcast(
+            "decision_agente",
+            {
+                "id": str(decision.id),
+                "campana_id": str(decision.campana_id),
+                "campana_nombre": decision.campana_nombre,
+                "trigger_evento": decision.trigger_evento,
+                "tool_ejecutada": decision.tool_ejecutada,
+                "parametros": decision.parametros or {},
+                "razonamiento_ia": decision.razonamiento_ia,
+                "estado": decision.estado
+            },
+            campana_id=str(decision.campana_id)
+        )
+    except Exception as e_ws:
+        logger.warning("Fallo al emitir decisión de agente por WebSocket: %s", e_ws)
+
     return decision

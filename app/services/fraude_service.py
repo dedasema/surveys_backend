@@ -44,6 +44,26 @@ def es_texto_gibberish_o_spam(texto: str) -> tuple[bool, float, str]:
 
     return False, 0.0, ""
 
+async def _emitir_alerta_fraude_ws(flag: FraudeFlag):
+    try:
+        from app.services.websocket_manager import ws_manager
+        await ws_manager.broadcast(
+            "alerta_fraude",
+            {
+                "id": str(flag.id),
+                "respuesta_id": str(flag.respuesta_id),
+                "campana_id": str(flag.campana_id),
+                "canal": flag.canal,
+                "tipo_senal": flag.tipo_senal,
+                "confianza": flag.confianza,
+                "contenido_respuesta": flag.contenido_respuesta,
+                "justificacion": flag.justificacion
+            },
+            campana_id=str(flag.campana_id)
+        )
+    except Exception as e_ws:
+        logger.warning("Fallo al emitir alerta de fraude por WebSocket: %s", e_ws)
+
 async def evaluar_respuesta_antifraude(
     db: Session,
     respuesta_id: UUID,
@@ -89,6 +109,7 @@ async def evaluar_respuesta_antifraude(
         db.add(flag)
         db.commit()
         db.refresh(flag)
+        await _emitir_alerta_fraude_ws(flag)
         return flag
 
     # 2. Señal por Similitud Semántica (pgvector / embeddings)
@@ -132,6 +153,7 @@ async def evaluar_respuesta_antifraude(
                 db.add(flag)
                 db.commit()
                 db.refresh(flag)
+                await _emitir_alerta_fraude_ws(flag)
                 return flag
 
             # Similitud coseno por embedding
@@ -156,6 +178,7 @@ async def evaluar_respuesta_antifraude(
                 db.add(flag)
                 db.commit()
                 db.refresh(flag)
+                await _emitir_alerta_fraude_ws(flag)
                 return flag
 
     return None

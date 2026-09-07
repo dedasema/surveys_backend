@@ -63,6 +63,8 @@ async def startup_event():
     import app.models.audio_respuesta
     import app.models.fraude_flag
     import app.models.agente_decision
+    import app.models.agregado_campana
+    import app.models.rag_consulta
 
     # Auto-create missing tables and migrate schema in database
     try:
@@ -380,6 +382,10 @@ from app.routers.encuestas_adaptativas_router import router as encuestas_adaptat
 from app.routers.clusters_router import router as clusters_router
 from app.routers.fraude_router import router as fraude_router
 from app.routers.agente_router import router as agente_router
+from app.routers.websocket_router import router as websocket_router
+from app.routers.predictivo_router import router as predictivo_router
+from app.routers.rag_router import router as rag_router
+from app.routers.observabilidad_router import router as observabilidad_router
 
 # Registrar routers modulares
 app.include_router(auth_router)
@@ -411,6 +417,10 @@ app.include_router(encuestas_adaptativas_router)
 app.include_router(clusters_router)
 app.include_router(fraude_router)
 app.include_router(agente_router)
+app.include_router(websocket_router)
+app.include_router(predictivo_router)
+app.include_router(rag_router)
+app.include_router(observabilidad_router)
 
 @app.get("/", summary="Health check")
 async def health_check():
