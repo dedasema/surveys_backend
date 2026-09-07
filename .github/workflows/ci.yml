@@ -34,6 +34,6 @@ jobs:
           SECRET_KEY: test_secret_key_ci_environment_32chars_min
           ALGORITHM: HS256
           ACCESS_TOKEN_EXPIRE_MINUTES: 60
-          DATABASE_URL: sqlite:///:memory:
+          DATABASE_URL: "sqlite:///:memory:"
         run: |
           pytest -v
