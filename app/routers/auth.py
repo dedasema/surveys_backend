@@ -177,6 +177,23 @@ def login(
     )
     refresh_token = create_refresh_token(db, user.id)
 
+    # Registrar evento de inicio de sesión en bitácora
+    try:
+        from app.services.audit_service import registrar_auditoria
+        sus_id = getattr(user, "suscriptor_id", None) or (user.id if isinstance(user, Suscriptor) else None)
+        registrar_auditoria(
+            db=db,
+            accion="LOGIN",
+            modulo="AUTH",
+            usuario_id=user.id,
+            usuario_email=user.email,
+            rol=rol.nombre if rol else "usuario",
+            suscriptor_id=sus_id,
+            detalles={"tipo_usuario": user.__class__.__name__}
+        )
+    except Exception as e_audit:
+        print(f"Warning: No se pudo registrar auditoría de login: {e_audit}")
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,

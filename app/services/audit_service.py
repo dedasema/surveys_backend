@@ -14,6 +14,7 @@ def registrar_auditoria(
     usuario_id: Optional[UUID] = None,
     usuario_email: Optional[str] = None,
     rol: Optional[str] = None,
+    suscriptor_id: Optional[UUID] = None,
     entidad_id: Optional[str] = None,
     detalles: Optional[Dict[str, Any]] = None,
     ip_address: Optional[str] = None,
@@ -23,6 +24,7 @@ def registrar_auditoria(
     """
     try:
         log_entry = AuditLog(
+            suscriptor_id=suscriptor_id,
             usuario_id=usuario_id,
             usuario_email=usuario_email,
             rol=rol,
@@ -46,6 +48,7 @@ def listar_auditoria(
     modulo: Optional[str] = None,
     accion: Optional[str] = None,
     usuario_id: Optional[UUID] = None,
+    suscriptor_id: Optional[UUID] = None,
     fecha_inicio: Optional[datetime] = None,
     fecha_fin: Optional[datetime] = None,
     limit: int = 100,
@@ -59,6 +62,8 @@ def listar_auditoria(
         query = query.filter(AuditLog.accion == accion.upper())
     if usuario_id:
         query = query.filter(AuditLog.usuario_id == usuario_id)
+    if suscriptor_id:
+        query = query.filter(AuditLog.suscriptor_id == suscriptor_id)
     if fecha_inicio:
         query = query.filter(AuditLog.creado_en >= fecha_inicio)
     if fecha_fin:
@@ -70,10 +75,13 @@ def contar_auditoria(
     db: Session,
     modulo: Optional[str] = None,
     accion: Optional[str] = None,
+    suscriptor_id: Optional[UUID] = None,
 ) -> int:
     query = db.query(AuditLog)
     if modulo:
         query = query.filter(AuditLog.modulo == modulo.upper())
     if accion:
         query = query.filter(AuditLog.accion == accion.upper())
+    if suscriptor_id:
+        query = query.filter(AuditLog.suscriptor_id == suscriptor_id)
     return query.count()

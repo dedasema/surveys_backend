@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
-from typing import Dict, List
+from typing import Dict, List, Optional
 from sqlalchemy import func, case
 from sqlalchemy.sql.expression import case
 
@@ -219,3 +219,40 @@ async def get_suscriptor_dashboard(
             "tasa_completitud": round((conversaciones_completadas / total_conversaciones * 100) if total_conversaciones > 0 else 0, 2)
         }
     }
+
+
+from app.schemas.uso_sistema import UsoSistemaResponse
+from app.services.uso_sistema_service import obtener_uso_sistema_empresa
+from app.models.suscriptor import Suscriptor
+from fastapi import Query
+
+@router.get("/uso-sistema", response_model=UsoSistemaResponse)
+def get_analytics_uso_sistema(
+    dias: int = Query(30, ge=1, le=365, description="Ventana de tiempo en días"),
+    suscriptor_id: Optional[UUID] = Query(None, description="ID del suscriptor (solo para rol admin)"),
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene métricas de uso del sistema para el suscriptor autenticado:
+    Última sesión, espacio usado, pagos acumulados, frecuencia, días de mayor uso, top 5 usuarios y gráfico CUD.
+    """
+    if token_data.role == "empresa":
+        tenant_id = UUID(token_data.sub)
+    elif token_data.role in ["operator", "empresa_operador"]:
+        cuenta = db.query(CuentaUsuario).filter(CuentaUsuario.id == UUID(token_data.sub)).first()
+        if not cuenta:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cuenta de usuario no encontrada")
+        tenant_id = cuenta.suscriptor_id
+    elif token_data.role == "admin":
+        if suscriptor_id:
+            tenant_id = suscriptor_id
+        else:
+            primer_sus = db.query(Suscriptor).first()
+            if not primer_sus:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No existen empresas registradas")
+            tenant_id = primer_sus.id
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene permisos para acceder a estos datos")
+
+    return obtener_uso_sistema_empresa(db=db, suscriptor_id=tenant_id, dias=dias)

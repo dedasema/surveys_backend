@@ -65,6 +65,7 @@ async def startup_event():
     import app.models.agente_decision
     import app.models.agregado_campana
     import app.models.rag_consulta
+    import app.models.archivo_empresa
 
     # Auto-create missing tables and migrate schema in database
     try:
@@ -107,6 +108,25 @@ async def startup_event():
             # Migraciones para motor de ramificación y preguntas generativas (RF17, RF17b)
             conn.execute(text("ALTER TABLE conversacion_encuesta ADD COLUMN IF NOT EXISTS preguntas_generativas_usadas INTEGER NOT NULL DEFAULT 0;"))
             conn.execute(text("ALTER TABLE conversacion_encuesta ADD COLUMN IF NOT EXISTS pregunta_generativa_activa TEXT;"))
+
+            # Migraciones para archivos de empresa y auditoría multi-tenant
+            conn.execute(text("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS suscriptor_id UUID;"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS archivo_empresa (
+                    id UUID PRIMARY KEY,
+                    suscriptor_id UUID NOT NULL REFERENCES suscriptor(id) ON DELETE CASCADE,
+                    nombre VARCHAR(255) NOT NULL,
+                    nombre_guardado VARCHAR(255) NOT NULL,
+                    ruta TEXT NOT NULL,
+                    extension VARCHAR(20) NOT NULL,
+                    peso_bytes INTEGER NOT NULL DEFAULT 0,
+                    mime_type VARCHAR(100) NOT NULL DEFAULT 'application/octet-stream',
+                    categoria VARCHAR(50) NOT NULL DEFAULT 'documento',
+                    contexto VARCHAR(255),
+                    creado_por VARCHAR(255),
+                    creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+            """))
 
             # Migraciones para embeddings en pgvector (RF22)
             try:
@@ -386,6 +406,11 @@ from app.routers.websocket_router import router as websocket_router
 from app.routers.predictivo_router import router as predictivo_router
 from app.routers.rag_router import router as rag_router
 from app.routers.observabilidad_router import router as observabilidad_router
+from app.routers.archivos_router import (
+    router as archivos_router,
+    empresa_alias_router as archivos_empresa_alias_router
+)
+from app.routers.empresa_router import router as empresa_router
 
 # Registrar routers modulares
 app.include_router(auth_router)
@@ -421,6 +446,9 @@ app.include_router(websocket_router)
 app.include_router(predictivo_router)
 app.include_router(rag_router)
 app.include_router(observabilidad_router)
+app.include_router(archivos_router)
+app.include_router(archivos_empresa_alias_router)
+app.include_router(empresa_router)
 
 @app.get("/", summary="Health check")
 async def health_check():
