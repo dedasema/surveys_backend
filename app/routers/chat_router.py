@@ -42,3 +42,32 @@ async def chat_endpoint(
             answer=f"Error en el servicio de chat: {str(e)}",
             action_log=[]
         )
+
+from app.schemas.chat_landing import ChatLandingIn, ChatLandingOut
+from app.services.chat_landing_service import chat_landing_completion
+
+@router.post("/landing", response_model=ChatLandingOut, status_code=status.HTTP_200_OK)
+@router.post("/publico", response_model=ChatLandingOut, status_code=status.HTTP_200_OK)
+async def chat_landing_endpoint(
+    payload: ChatLandingIn
+):
+    """
+    Endpoint público para el chatbot de asistencia y ventas en la Landing Page.
+    No requiere autenticación. Soporta historial multi-turn y devuelve sugerencias de acción (CTAs).
+    """
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Mensaje vacío")
+
+    try:
+        return await chat_landing_completion(
+            message=payload.message,
+            history=payload.history
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return ChatLandingOut(
+            answer=f"Lo siento, ocurrió un error procesando tu consulta: {str(e)}",
+            actions=[]
+        )
+
