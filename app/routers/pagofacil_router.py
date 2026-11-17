@@ -16,8 +16,10 @@ from app.schemas.pagofacil import (
     PagoFacilCallbackPayload,
     PagoFacilCallbackResponse,
     MetodosHabilitadosResponse,
-    PagoFacilTransaccionOut
+    PagoFacilTransaccionOut,
+    TipoCambioResponse
 )
+from app.services.tipo_cambio_service import obtener_tipo_cambio_oficial
 from app.services.pagofacil_service import (
     pagofacil_client,
     crear_orden_qr,
@@ -52,6 +54,24 @@ def _resolver_suscriptor_id(db: Session, token_data: TokenData) -> UUID:
         raise HTTPException(status_code=403, detail="No tienes permisos para realizar pagos")
 
 # ─────────────────── Endpoints ─────────────────── #
+
+@router.get("/tipo-cambio", response_model=TipoCambioResponse)
+@subscription_pagofacil_router.get("/tipo-cambio", response_model=TipoCambioResponse)
+async def get_tipo_cambio_del_dia(
+    refrescar: bool = Query(False, description="Forzar refresco desde la API oficial del BCB")
+):
+    """
+    Obtiene el tipo de cambio oficial del día (USD a BOB).
+    Utiliza como fuente el Banco Central de Bolivia (BCB) con fallback automático a 7.00.
+    """
+    valor, es_fallback, meta = await obtener_tipo_cambio_oficial(forzar_refresco=refrescar)
+    return {
+        "valor": valor,
+        "fuente": meta.get("fuente", "Banco Central de Bolivia (bcb.gob.bo)"),
+        "moneda": "USD/BOB",
+        "fecha": meta.get("fecha"),
+        "es_fallback": es_fallback
+    }
 
 @router.get("/metodos", response_model=MetodosHabilitadosResponse)
 @subscription_pagofacil_router.get("/metodos", response_model=MetodosHabilitadosResponse)
@@ -155,6 +175,8 @@ def listar_transacciones_suscriptor(
             payment_number=t.payment_number,
             plan_id=t.plan_id,
             monto=float(t.monto),
+            monto_qr=float(t.monto_qr) if t.monto_qr is not None else None,
+            tipo_cambio=float(t.tipo_cambio) if t.tipo_cambio is not None else None,
             moneda=t.moneda,
             estado=t.estado,
             pagofacil_transaction_id=t.pagofacil_transaction_id,

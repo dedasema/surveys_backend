@@ -137,6 +137,7 @@ async def startup_event():
                     suscriptor_id UUID NOT NULL REFERENCES suscriptor(id) ON DELETE CASCADE,
                     plan_id INTEGER NOT NULL REFERENCES plan_suscripcion(id),
                     monto NUMERIC(10, 2) NOT NULL,
+                    monto_qr NUMERIC(10, 4),
                     moneda VARCHAR(10) NOT NULL DEFAULT 'BOB',
                     tipo_cambio NUMERIC(10, 2) NOT NULL DEFAULT 6.96,
                     estado VARCHAR(50) NOT NULL DEFAULT 'pendiente',
@@ -152,6 +153,7 @@ async def startup_event():
                     actualizado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
             """))
+            conn.execute(text("ALTER TABLE pagofacil_transaccion ADD COLUMN IF NOT EXISTS monto_qr NUMERIC(10, 4);"))
 
             # Migraciones para embeddings en pgvector (RF22)
             try:

@@ -24,6 +24,7 @@ from app.schemas.pagofacil import (
     MetodoHabilitadoItem,
     MetodosHabilitadosResponse
 )
+from app.services.tipo_cambio_service import obtener_tipo_cambio_oficial
 from app.services.audit_service import registrar_auditoria
 
 logger = logging.getLogger(__name__)
@@ -240,8 +241,17 @@ async def crear_orden_qr(
     if not plan:
         raise ValueError("Plan de suscripción no encontrado")
 
-    monto_bob = calcular_monto_bob(plan, payload.monto)
-    if monto_bob <= 0:
+    # 1. Obtener Tipo de Cambio Oficial del día (con fallback a 7.00)
+    tc_oficial, es_fallback, _ = await obtener_tipo_cambio_oficial()
+
+    # 2. Calcular monto real en Bolivianos (BOB) según el plan
+    precio_usd = float(plan.precio_mensual or 0.0)
+    if payload.monto is not None and payload.monto > 0:
+        monto_real_bob = round(float(payload.monto), 2)
+    else:
+        monto_real_bob = round(precio_usd * tc_oficial, 2)
+
+    if monto_real_bob <= 0:
         # Si el plan es gratuito ($0 USD), activar directamente sin QR
         suscripcion = SuscripcionSuscriptor(
             suscriptor_id=suscriptor.id,
@@ -258,10 +268,19 @@ async def crear_orden_qr(
             payment_number=f"GRATIS-{uuid.uuid4().hex[:8]}",
             status="completado",
             monto=0.0,
+            monto_real_bob=0.0,
+            monto_qr=0.0,
+            tipo_cambio=tc_oficial,
+            es_fallback_tc=es_fallback,
             moneda="BOB",
             plan_nombre=plan.nombre,
             checkout_url=f"{settings.clean_frontend_url}/dashboard-suscriptor/planes/success"
         )
+
+    # 3. Escalamiento de pruebas: dividir entre 1000 únicamente para el monto enviado a PagoFácil
+    monto_qr_test = round(monto_real_bob / 1000.0, 2)
+    if monto_qr_test < 0.01 and monto_real_bob > 0:
+        monto_qr_test = 0.01
 
     # Identificador único de transacción del comercio
     payment_number = f"PF-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
@@ -272,21 +291,22 @@ async def crear_orden_qr(
         api_base = settings.API_BASE_URL.rstrip("/")
         callback_url = f"{api_base}/subscription/pagofacil/callback"
 
-    # 1. Crear registro en BD en estado 'pendiente'
+    # 4. Crear registro en BD en estado 'pendiente'
     nueva_tx = PagoFacilTransaccion(
         payment_number=payment_number,
         suscriptor_id=suscriptor.id,
         plan_id=plan.id,
-        monto=monto_bob,
+        monto=monto_real_bob,
+        monto_qr=monto_qr_test,
         moneda=payload.moneda or "BOB",
-        tipo_cambio=TIPO_CAMBIO_BOB_USD,
+        tipo_cambio=tc_oficial,
         estado="pendiente"
     )
     db.add(nueva_tx)
     db.commit()
     db.refresh(nueva_tx)
 
-    # 2. Construir payload para PagoFácil
+    # 5. Construir payload para PagoFácil con el monto de prueba (monto_real / 1000)
     client_name = payload.client_name or suscriptor.nombre or "Cliente"
     client_phone = payload.phone_number or getattr(suscriptor, "telefono", "") or "70000000"
     client_email = payload.email or suscriptor.email or "cliente@surveysaas.com"
@@ -300,7 +320,7 @@ async def crear_orden_qr(
         "phoneNumber": client_phone,
         "email": client_email,
         "paymentNumber": payment_number,
-        "amount": monto_bob,
+        "amount": monto_qr_test,
         "currency": 2,  # 2: BOB (Bolivianos)
         "clientCode": str(suscriptor.id),
         "callbackUrl": callback_url,
@@ -309,9 +329,9 @@ async def crear_orden_qr(
                 "serial": 1,
                 "product": f"Suscripción Mensual - {plan.nombre}",
                 "quantity": 1,
-                "price": monto_bob,
+                "price": monto_qr_test,
                 "discount": 0,
-                "total": monto_bob
+                "total": monto_qr_test
             }
         ]
     }
@@ -347,7 +367,7 @@ async def crear_orden_qr(
             suscriptor_id=suscriptor.id,
             usuario_email=suscriptor.email,
             entidad_id=payment_number,
-            detalles={"plan": plan.nombre, "monto_bob": monto_bob}
+            detalles={"plan": plan.nombre, "monto_real_bob": monto_real_bob, "monto_qr_test": monto_qr_test, "tipo_cambio": tc_oficial}
         )
 
         return GenerarQRResponse(
@@ -361,7 +381,11 @@ async def crear_orden_qr(
             qr_content_url=nueva_tx.qr_content_url,
             universal_url=nueva_tx.universal_url,
             expiration_date=exp_date_str,
-            monto=monto_bob,
+            monto=monto_real_bob,
+            monto_real_bob=monto_real_bob,
+            monto_qr=monto_qr_test,
+            tipo_cambio=tc_oficial,
+            es_fallback_tc=es_fallback,
             moneda="BOB",
             plan_nombre=plan.nombre
         )

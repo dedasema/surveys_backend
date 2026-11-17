@@ -228,3 +228,84 @@ def test_pagofacil_listar_transacciones_suscriptor(client, db_session, empresa_h
     assert "payment_number" in items[0]
     assert "monto" in items[0]
     assert "estado" in items[0]
+
+def test_pagofacil_tipo_cambio_endpoint(client):
+    """Verifica el endpoint para consultar el tipo de cambio oficial del día."""
+    res = client.get("/pagofacil/tipo-cambio")
+    assert res.status_code == 200
+    data = res.json()
+    assert "valor" in data
+    assert data["valor"] > 0
+    assert data["moneda"] == "USD/BOB"
+    assert "es_fallback" in data
+
+def test_pagofacil_generar_qr_con_tipo_cambio_y_division_1000(client, db_session, empresa_headers):
+    """
+    Verifica que al generar el QR:
+    - Se consulte el tipo de cambio oficial (ej. 11.00 USD/BOB)
+    - Si el plan vale $10 USD, el monto real en bolivianos sea 110.00 BOB
+    - El monto enviado al QR se divida entre 1000 para pruebas (0.11 BOB)
+    """
+    setup_test_empresa_and_plan(db_session)
+    # Crear un plan de prueba de $10 USD
+    plan_diez = db_session.query(PlanSuscripcion).filter_by(nombre="Plan Test 10 USD").first()
+    if not plan_diez:
+        plan_diez = PlanSuscripcion(
+            nombre="Plan Test 10 USD",
+            precio_mensual=10.00,
+            descripcion="Plan de prueba",
+            activo=True
+        )
+        db_session.add(plan_diez)
+        db_session.commit()
+
+    with patch("app.services.pagofacil_service.obtener_tipo_cambio_oficial", new_callable=AsyncMock) as mock_tc:
+        mock_tc.return_value = (11.00, False, {"fuente": "BCB Test"})
+
+        res = client.post("/pagofacil/generar-qr", json={"plan_id": plan_diez.id}, headers=empresa_headers)
+        assert res.status_code == 201
+        data = res.json()
+
+        assert data["tipo_cambio"] == 11.00
+        assert data["monto_real_bob"] == 110.00
+        assert data["monto_qr"] == 0.11
+        assert data["es_fallback_tc"] is False
+
+        # Verificar en base de datos
+        tx = db_session.query(PagoFacilTransaccion).filter_by(payment_number=data["payment_number"]).first()
+        assert float(tx.monto) == 110.00
+        assert float(tx.monto_qr) == 0.11
+        assert float(tx.tipo_cambio) == 11.00
+
+def test_pagofacil_generar_qr_fallback_tc_a_7(client, db_session, empresa_headers):
+    """
+    Verifica que si la API del tipo de cambio falla, aplique el fallback obligatorio en 7.00.
+    Para un plan de $10 USD:
+    - Monto real BOB = 10 * 7 = 70.00 BOB
+    - Monto QR pruebas = 70 / 1000 = 0.07 BOB
+    """
+    setup_test_empresa_and_plan(db_session)
+    plan_diez = db_session.query(PlanSuscripcion).filter_by(nombre="Plan Test 10 USD Fallback").first()
+    if not plan_diez:
+        plan_diez = PlanSuscripcion(
+            nombre="Plan Test 10 USD Fallback",
+            precio_mensual=10.00,
+            descripcion="Plan de prueba fallback",
+            activo=True
+        )
+        db_session.add(plan_diez)
+        db_session.commit()
+
+    with patch("app.services.tipo_cambio_service.httpx.AsyncClient.get", side_effect=Exception("API caída")):
+        # Forzamos refresco para disparar la llamada HTTP fallida
+        from app.services.tipo_cambio_service import _tc_cache
+        _tc_cache["timestamp"] = 0.0
+
+        res = client.post("/pagofacil/generar-qr", json={"plan_id": plan_diez.id}, headers=empresa_headers)
+        assert res.status_code == 201
+        data = res.json()
+
+        assert data["tipo_cambio"] == 7.00
+        assert data["monto_real_bob"] == 70.00
+        assert data["monto_qr"] == 0.07
+        assert data["es_fallback_tc"] is True

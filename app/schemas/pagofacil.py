@@ -29,8 +29,21 @@ class GenerarQRResponse(BaseModel):
     universal_url: Optional[str] = None
     expiration_date: Optional[str] = None
     monto: float
+    monto_real_bob: float
+    monto_qr: float
+    tipo_cambio: float
+    es_fallback_tc: bool = False
     moneda: str
     plan_nombre: str
+
+class TipoCambioResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    valor: float
+    fuente: str
+    moneda: str = "USD/BOB"
+    fecha: Optional[str] = None
+    es_fallback: bool = False
 
 class ConsultarTransaccionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -86,6 +99,8 @@ class PagoFacilTransaccionOut(BaseModel):
     payment_number: str
     plan_id: int
     monto: float
+    monto_qr: Optional[float] = None
+    tipo_cambio: Optional[float] = None
     moneda: str
     estado: str
     pagofacil_transaction_id: Optional[str] = None

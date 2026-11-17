@@ -14,6 +14,7 @@ class PagoFacilTransaccion(Base):
     suscriptor_id = Column(PGUUID(as_uuid=True), ForeignKey("suscriptor.id", ondelete="CASCADE"), nullable=False, index=True)
     plan_id = Column(Integer, ForeignKey("plan_suscripcion.id"), nullable=False)
     monto = Column(Numeric(10, 2), nullable=False)
+    monto_qr = Column(Numeric(10, 4), nullable=True)
     moneda = Column(String(10), nullable=False, default="BOB")
     tipo_cambio = Column(Numeric(10, 2), nullable=False, default=6.96)
     estado = Column(String(50), nullable=False, default="pendiente", index=True)
