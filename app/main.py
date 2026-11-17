@@ -442,6 +442,11 @@ from app.routers.pagofacil_router import (
     router as pagofacil_router,
     subscription_pagofacil_router
 )
+from app.routers.mcp_router import router as mcp_router
+from app.routers.copilot_router import (
+    router as copilot_router,
+    agente_copilot_alias_router
+)
 
 # Registrar routers modulares
 app.include_router(auth_router)
@@ -482,6 +487,9 @@ app.include_router(archivos_empresa_alias_router)
 app.include_router(empresa_router)
 app.include_router(pagofacil_router)
 app.include_router(subscription_pagofacil_router)
+app.include_router(mcp_router)
+app.include_router(copilot_router)
+app.include_router(agente_copilot_alias_router)
 
 @app.get("/", summary="Health check")
 async def health_check():
