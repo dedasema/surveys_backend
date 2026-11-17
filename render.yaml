@@ -16,3 +16,5 @@ services:
         value: "60"
       - key: SURVEY_LINK_EXPIRY_DAYS
         value: "7"
+      - key: PORT
+        value: "10000"

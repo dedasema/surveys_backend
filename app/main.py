@@ -491,3 +491,9 @@ async def health_check():
 @app.get("/stripe-verify-session")
 async def verify_session_fallback(session_id: str = ""):
     return {"success": True, "message": "Pago verificado exitosamente"}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
+
