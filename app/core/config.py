@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     GMAIL_SECRET_TOKEN: Optional[str] = ""
     EMAIL_FROM: Optional[str] = ""
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
+    tctokenservice: Optional[str] = os.getenv("tctokenservice", os.getenv("tcTokenService", os.getenv("TCTOKENSERVICE", "")))
+    tctokensecret: Optional[str] = os.getenv("tctokensecret", os.getenv("tcTokenSecret", os.getenv("TCTOKENSECRET", "")))
+    PAGOFACIL_BASE_URL: str = os.getenv("PAGOFACIL_BASE_URL", "https://masterqr.pagofacil.com.bo/api/services/v2")
+    PAGOFACIL_CALLBACK_URL: Optional[str] = os.getenv("PAGOFACIL_CALLBACK_URL", "")
+
+    @property
+    def pagofacil_token_service(self) -> str:
+        return (self.tctokenservice or os.getenv("tctokenservice") or os.getenv("tcTokenService") or os.getenv("TCTOKENSERVICE") or "").strip()
+
+    @property
+    def pagofacil_token_secret(self) -> str:
+        return (self.tctokensecret or os.getenv("tctokensecret") or os.getenv("tcTokenSecret") or os.getenv("TCTOKENSECRET") or "").strip()
 
     @property
     def clean_frontend_url(self) -> str:

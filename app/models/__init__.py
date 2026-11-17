@@ -11,3 +11,4 @@ from app.models.audit_log import AuditLog
 from app.models.refresh_token import RefreshToken
 from app.models.audio_respuesta import AudioRespuesta
 from app.models.archivo_empresa import ArchivoEmpresa
+from app.models.pagofacil import PagoFacilTransaccion

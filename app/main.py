@@ -66,6 +66,7 @@ async def startup_event():
     import app.models.agregado_campana
     import app.models.rag_consulta
     import app.models.archivo_empresa
+    import app.models.pagofacil
 
     # Auto-create missing tables and migrate schema in database
     try:
@@ -125,6 +126,30 @@ async def startup_event():
                     contexto VARCHAR(255),
                     creado_por VARCHAR(255),
                     creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+            """))
+
+            # Migración para transacciones de PagoFácil
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS pagofacil_transaccion (
+                    id UUID PRIMARY KEY,
+                    payment_number VARCHAR(100) UNIQUE NOT NULL,
+                    suscriptor_id UUID NOT NULL REFERENCES suscriptor(id) ON DELETE CASCADE,
+                    plan_id INTEGER NOT NULL REFERENCES plan_suscripcion(id),
+                    monto NUMERIC(10, 2) NOT NULL,
+                    moneda VARCHAR(10) NOT NULL DEFAULT 'BOB',
+                    tipo_cambio NUMERIC(10, 2) NOT NULL DEFAULT 6.96,
+                    estado VARCHAR(50) NOT NULL DEFAULT 'pendiente',
+                    pagofacil_transaction_id VARCHAR(100),
+                    qr_base64 TEXT,
+                    checkout_url TEXT,
+                    deep_link TEXT,
+                    qr_content_url TEXT,
+                    universal_url TEXT,
+                    fecha_expiracion TIMESTAMP WITH TIME ZONE,
+                    callback_payload JSONB,
+                    creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    actualizado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
             """))
 
@@ -411,6 +436,10 @@ from app.routers.archivos_router import (
     empresa_alias_router as archivos_empresa_alias_router
 )
 from app.routers.empresa_router import router as empresa_router
+from app.routers.pagofacil_router import (
+    router as pagofacil_router,
+    subscription_pagofacil_router
+)
 
 # Registrar routers modulares
 app.include_router(auth_router)
@@ -449,6 +478,8 @@ app.include_router(observabilidad_router)
 app.include_router(archivos_router)
 app.include_router(archivos_empresa_alias_router)
 app.include_router(empresa_router)
+app.include_router(pagofacil_router)
+app.include_router(subscription_pagofacil_router)
 
 @app.get("/", summary="Health check")
 async def health_check():
