@@ -244,8 +244,102 @@ async def crear_orden_qr(
     # 1. Obtener Tipo de Cambio Oficial del día (con fallback a 7.00)
     tc_oficial, es_fallback, _ = await obtener_tipo_cambio_oficial()
 
+    # 0. Analizar suscripción actual para Prorrateo, Downgrade o Renovación
+    sub_actual = (
+        db.query(SuscripcionSuscriptor)
+        .filter_by(suscriptor_id=suscriptor.id, estado="activo")
+        .order_by(SuscripcionSuscriptor.inicia_en.desc())
+        .first()
+    )
+
+    plan_actual = sub_actual.plan if sub_actual else None
+    precio_actual_usd = float(plan_actual.precio_mensual or 0.0) if plan_actual else 0.0
+    precio_solicitado_usd = float(plan.precio_mensual or 0.0)
+
+    # CASO DOWNGRADE: Si el plan solicitado cuesta MENOS que el plan actual
+    if plan_actual and precio_solicitado_usd < precio_actual_usd:
+        # A) Validar límites de recursos antes de permitir el downgrade
+        from app.models.survey import PlantillaEncuesta, CampanaEncuesta
+        from app.models.cuenta_usuario import CuentaUsuario
+        from app.models.catalogos import Rol
+
+        # Plantillas
+        if plan.max_plantillas != -1:
+            total_plantillas = db.query(PlantillaEncuesta).filter_by(suscriptor_id=suscriptor.id).count()
+            if total_plantillas > plan.max_plantillas:
+                raise ValueError(
+                    f"No puedes cambiar al plan '{plan.nombre}' porque tienes {total_plantillas} plantillas creadas "
+                    f"y este plan solo admite hasta {plan.max_plantillas}. Archiva o elimina plantillas antes de cambiar."
+                )
+
+        # Operadores
+        if plan.max_operadores != -1:
+            total_operadores = (
+                db.query(CuentaUsuario)
+                .join(CuentaUsuario.rol)
+                .filter(CuentaUsuario.suscriptor_id == suscriptor.id, Rol.nombre == "operator")
+                .count()
+            )
+            if total_operadores > plan.max_operadores:
+                raise ValueError(
+                    f"No puedes cambiar al plan '{plan.nombre}' porque tienes {total_operadores} operadores registrados "
+                    f"y este plan solo admite hasta {plan.max_operadores}. Da de baja operadores antes de cambiar."
+                )
+
+        # Campañas
+        if plan.max_campanas != -1:
+            total_campanas = (
+                db.query(CampanaEncuesta)
+                .filter(CampanaEncuesta.suscriptor_id == suscriptor.id, CampanaEncuesta.estado_id != 5)
+                .count()
+            )
+            if total_campanas > plan.max_campanas:
+                raise ValueError(
+                    f"No puedes cambiar al plan '{plan.nombre}' porque tienes {total_campanas} campañas activas "
+                    f"y este plan solo admite hasta {plan.max_campanas}. Finaliza o cancela campañas antes de cambiar."
+                )
+
+        # B) Si el plan actual sigue vigente, no cobrar ahora: se programa para el fin de ciclo
+        now_dt = datetime.now(timezone.utc)
+        expira_dt = sub_actual.expira_en
+        if expira_dt and expira_dt.tzinfo is None:
+            expira_dt = expira_dt.replace(tzinfo=timezone.utc)
+
+        if expira_dt and expira_dt > now_dt:
+            fecha_fin_str = expira_dt.strftime("%d/%m/%Y")
+            return GenerarQRResponse(
+                success=True,
+                payment_number=f"DOWNGRADE-PROG-{uuid.uuid4().hex[:8].upper()}",
+                status="programado",
+                monto=0.0,
+                monto_real_bob=0.0,
+                monto_qr=0.0,
+                tipo_cambio=tc_oficial,
+                es_fallback_tc=es_fallback,
+                moneda="BOB",
+                plan_nombre=plan.nombre,
+                checkout_url=f"{settings.clean_frontend_url}/dashboard-suscriptor/planes/success?status=programado",
+                mensaje=f"Tu plan actual '{plan_actual.nombre}' se mantendrá activo hasta el {fecha_fin_str}. El cambio a '{plan.nombre}' entrará en vigencia al finalizar tu ciclo sin costos adicionales hoy."
+            )
+
+    # CASO UPGRADE: Si el plan solicitado cuesta MÁS que el plan actual, aplicar crédito por días no usados
+    precio_usd = precio_solicitado_usd
+    if plan_actual and precio_solicitado_usd > precio_actual_usd:
+        now_dt = datetime.now(timezone.utc)
+        expira_dt = sub_actual.expira_en
+        if expira_dt and expira_dt.tzinfo is None:
+            expira_dt = expira_dt.replace(tzinfo=timezone.utc)
+
+        dias_restantes = 0
+        if expira_dt and expira_dt > now_dt:
+            dias_restantes = max(0, round((expira_dt - now_dt).total_seconds() / 86400.0))
+
+        ratio_no_usado = min(1.0, max(0.0, dias_restantes / 30.0))
+        credito_favor_usd = round(precio_actual_usd * ratio_no_usado, 2)
+        precio_a_cobrar_usd = max(1.0, round(precio_solicitado_usd - credito_favor_usd, 2))
+        precio_usd = precio_a_cobrar_usd
+
     # 2. Calcular monto real en Bolivianos (BOB) según el plan
-    precio_usd = float(plan.precio_mensual or 0.0)
     if payload.monto is not None and payload.monto > 0:
         monto_real_bob = round(float(payload.monto), 2)
     else:
@@ -411,7 +505,26 @@ def activar_suscripcion_por_pago(
         logger.error("No se encontró suscriptor o plan para activar suscripción tras pago")
         return
 
-    # 1. Desactivar suscripciones anteriores activas
+    # 1. Comprobar si es renovación del mismo plan con días remanentes
+    ahora = datetime.now(timezone.utc)
+    nueva_expira = ahora + timedelta(days=30)
+
+    sub_vigente = (
+        db.query(SuscripcionSuscriptor)
+        .filter_by(suscriptor_id=suscriptor.id, estado="activo")
+        .order_by(SuscripcionSuscriptor.inicia_en.desc())
+        .first()
+    )
+    if sub_vigente and sub_vigente.plan_id == plan.id:
+        exp_existente = sub_vigente.expira_en
+        if exp_existente:
+            if exp_existente.tzinfo is None:
+                exp_existente = exp_existente.replace(tzinfo=timezone.utc)
+            if exp_existente > ahora:
+                # Extender vigencia sumando 30 días a la fecha que ya tenía
+                nueva_expira = exp_existente + timedelta(days=30)
+
+    # Desactivar suscripciones anteriores activas
     suscripciones_ant = (
         db.query(SuscripcionSuscriptor)
         .filter_by(suscriptor_id=suscriptor.id, estado="activo")
@@ -420,13 +533,12 @@ def activar_suscripcion_por_pago(
     for s in suscripciones_ant:
         s.estado = "cancelado"
 
-    # 2. Crear nueva suscripción activa por 30 días
-    ahora = datetime.now(timezone.utc)
+    # 2. Crear nueva suscripción activa con vigencia calculada
     nueva_sub = SuscripcionSuscriptor(
         suscriptor_id=suscriptor.id,
         plan_id=plan.id,
         inicia_en=ahora,
-        expira_en=ahora + timedelta(days=30),
+        expira_en=nueva_expira,
         estado="activo",
         stripe_subscription_id=f"pf_{transaccion.payment_number}"
     )

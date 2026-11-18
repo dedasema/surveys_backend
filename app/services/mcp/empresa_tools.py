@@ -6,7 +6,9 @@ from sqlalchemy import func
 
 from app.models.suscriptor import Suscriptor
 from app.models.subscription import PlanSuscripcion, SuscripcionSuscriptor
-from app.models.survey import CampanaEncuesta, PlantillaEncuesta, EntregaEncuesta, RespuestaEncuesta
+from app.models.survey import (
+    CampanaEncuesta, PlantillaEncuesta, EntregaEncuesta, RespuestaEncuesta, RespuestaPregunta
+)
 from app.models.cuenta_usuario import CuentaUsuario
 from app.models.fraude_flag import FraudeFlag
 from app.models.agregado_campana import AgregadoCampana
@@ -312,3 +314,127 @@ async def sugerir_preguntas_encuesta_handler(db: Session, actor: ActorContext, a
         "total_preguntas_sugeridas": len(sugerencias),
         "preguntas": sugerencias
     }
+
+
+@mcp_registry.register(
+    name="consultar_conocimiento_rag",
+    description="Busca semánticamente en las respuestas cualitativas de encuestas recolectadas (texto, transcripciones de audio y OCR de papel) usando pgvector, devolviendo fragmentos relevantes y evidencia verificada.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "pregunta": {
+                "type": "string",
+                "description": "Consulta o pregunta analítica a buscar en el feedback cualitativo de las encuestas"
+            },
+            "campana_id": {
+                "type": "string",
+                "description": "UUID opcional de campaña para acotar la búsqueda semántica"
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Cantidad de citas relevantes a recuperar (default: 4)"
+            }
+        },
+        "required": ["pregunta"]
+    },
+    roles_permitidos=["empresa", "suscriptor", "admin", "analista"]
+)
+async def consultar_conocimiento_rag_handler(db: Session, actor: ActorContext, args: Dict[str, Any]) -> Dict[str, Any]:
+    suscriptor_id = actor.requiere_suscriptor_id()
+    pregunta = str(args.get("pregunta", "")).strip()
+    if not pregunta:
+        return {"error": "El parámetro 'pregunta' es obligatorio"}
+
+    campana_id_str = args.get("campana_id")
+    campana_uuid = None
+    if campana_id_str:
+        try:
+            campana_uuid = UUID(campana_id_str)
+            camp = db.query(CampanaEncuesta).filter_by(id=campana_uuid, suscriptor_id=suscriptor_id).first()
+            if not camp:
+                return {"error": "Campaña no encontrada o no pertenece a tu empresa"}
+        except ValueError:
+            return {"error": "campana_id no tiene formato UUID válido"}
+
+    top_k = min(int(args.get("top_k", 4)), 10)
+
+    # 1. Obtener respuestas candidatas de la BD filtradas estrictamente por suscriptor_id
+    query = (
+        db.query(RespuestaPregunta)
+        .join(RespuestaEncuesta, RespuestaPregunta.respuesta_id == RespuestaEncuesta.id)
+        .join(EntregaEncuesta, RespuestaEncuesta.entrega_id == EntregaEncuesta.id)
+        .join(CampanaEncuesta, EntregaEncuesta.campana_id == CampanaEncuesta.id)
+        .filter(
+            CampanaEncuesta.suscriptor_id == suscriptor_id,
+            RespuestaPregunta.texto.isnot(None),
+            RespuestaPregunta.texto != ""
+        )
+    )
+    if campana_uuid:
+        query = query.filter(EntregaEncuesta.campana_id == campana_uuid)
+
+    items = query.order_by(RespuestaEncuesta.recibido_en.desc()).limit(50).all()
+
+    if not items:
+        return {
+            "pregunta": pregunta,
+            "total_citas": 0,
+            "fuentes_citadas": [],
+            "mensaje": "No se encontraron respuestas registradas aún para analizar."
+        }
+
+    from app.services.embedding_service import generar_embedding, similitud_coseno
+    emb_pregunta = await generar_embedding(pregunta)
+
+    candidatos = []
+    for item in items:
+        t = (item.texto or "").strip()
+        if len(t) < 4:
+            continue
+        vec = item.embedding
+        if vec is None or len(vec) != 768:
+            vec = await generar_embedding(t)
+            try:
+                item.embedding = vec
+            except Exception:
+                pass
+        sim = similitud_coseno(emb_pregunta, vec)
+        candidatos.append((sim, item))
+
+    candidatos.sort(key=lambda x: x[0], reverse=True)
+    top_candidatos = candidatos[:top_k]
+
+    fuentes_citadas = []
+    for sim, rp in top_candidatos:
+        resp = rp.respuesta
+        entrega = resp.entrega if resp else None
+        camp = entrega.campana if entrega else None
+
+        canal_nombre = "web"
+        if entrega and entrega.canal_id == 1:
+            canal_nombre = "email"
+        elif entrega and entrega.canal_id == 2:
+            canal_nombre = "voz"
+        elif entrega and entrega.canal_id == 3:
+            canal_nombre = "ocr"
+        elif entrega and entrega.canal_id == 4:
+            canal_nombre = "whatsapp"
+
+        fecha_str = resp.recibido_en.strftime("%Y-%m-%d") if (resp and resp.recibido_en) else "Reciente"
+        camp_nombre = camp.nombre if camp else "Campaña"
+
+        fuentes_citadas.append({
+            "id": str(rp.id),
+            "canal": canal_nombre,
+            "campana": camp_nombre,
+            "fragmento": rp.texto[:300],
+            "similitud_score": round(max(0.1, sim), 2),
+            "fecha": fecha_str
+        })
+
+    return {
+        "pregunta": pregunta,
+        "total_citas": len(fuentes_citadas),
+        "fuentes_citadas": fuentes_citadas
+    }
+

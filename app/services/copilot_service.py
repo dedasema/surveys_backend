@@ -44,6 +44,7 @@ async def procesar_mensaje_copilot(
 
     tools_gemini = mcp_registry.list_tools_for_gemini(actor)
     tools_usadas: List[Dict[str, Any]] = []
+    fuentes_citadas: List[Dict[str, Any]] = []
     acciones_sugeridas: List[str] = []
 
     # Construir contexto con historial reciente (máximo 4 mensajes previos)
@@ -87,6 +88,11 @@ async def procesar_mensaje_copilot(
                 "arguments": tool_args,
                 "result_summary": str(tool_result.get("data"))[:200]
             })
+
+            if tool_name == "consultar_conocimiento_rag" and tool_result.get("success"):
+                citas = tool_result.get("data", {}).get("fuentes_citadas", [])
+                if isinstance(citas, list):
+                    fuentes_citadas.extend(citas)
 
             # Registrar auditoría de ejecución
             registrar_auditoria(
@@ -157,7 +163,7 @@ async def procesar_mensaje_copilot(
     except Exception as e:
         logger.warning("Fallo en orquestación Gemini Copilot: %s. Aplicando fallback determinista.", e)
         # Fallback determinista en caso de que Gemini esté en pausa o sin cuota
-        respuesta_texto, tools_usadas = await _ejecutar_fallback_deterministico(
+        respuesta_texto, tools_usadas, fuentes_citadas = await _ejecutar_fallback_deterministico(
             db=db,
             actor=actor,
             mensaje=mensaje,
@@ -171,12 +177,15 @@ async def procesar_mensaje_copilot(
         acciones_sugeridas = ["Revisar cola de fraude", "Ver respuestas sospechosas"]
     elif "pregunta" in mensaje.lower():
         acciones_sugeridas = ["Copiar preguntas a plantilla", "Generar preguntas para WhatsApp"]
+    elif "rag" in mensaje.lower() or "opinion" in mensaje.lower() or "feedback" in mensaje.lower():
+        acciones_sugeridas = ["Buscar comentarios negativos", "Ver satisfacción general", "Auditar fraudes"]
     else:
         acciones_sugeridas = ["Ver resumen de métricas", "Listar campañas activas", "Consultar alertas de fraude"]
 
     return {
         "answer": respuesta_texto,
         "tools_used": tools_usadas,
+        "fuentes_citadas": fuentes_citadas,
         "suggested_actions": acciones_sugeridas
     }
 
@@ -186,13 +195,31 @@ async def _ejecutar_fallback_deterministico(
     actor: ActorContext,
     mensaje: str,
     campana_id: Optional[UUID] = None
-) -> tuple[str, List[Dict[str, Any]]]:
+) -> tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Fallback seguro y robusto en caso de caída o saturación temporal de cuota de la API de LLM.
     Identifica la intención del usuario y ejecuta la tool MCP adecuada directamente.
     """
     msg_lower = mensaje.lower()
     tools_usadas = []
+    fuentes_citadas = []
+
+    if any(k in msg_lower for k in ["rag", "opinion", "feedback", "que dicen", "comentario"]):
+        res = await mcp_registry.execute_tool(
+            "consultar_conocimiento_rag",
+            {"pregunta": mensaje, "campana_id": str(campana_id) if campana_id else None},
+            actor,
+            db
+        )
+        tools_usadas.append({"tool": "consultar_conocimiento_rag", "arguments": {"pregunta": mensaje}, "result_summary": "Búsqueda RAG"})
+        if res["success"]:
+            d = res["data"]
+            citas = d.get("fuentes_citadas", [])
+            fuentes_citadas.extend(citas)
+            if citas:
+                lineas = [f"- (Cita {i+1} - {c['canal']}): \"{c['fragmento']}\"" for i, c in enumerate(citas)]
+                return f"### Evidencia cualitativa encontrada en respuestas:\n" + "\n".join(lineas), tools_usadas, fuentes_citadas
+            return "No se encontraron comentarios que coincidan con la búsqueda.", tools_usadas, fuentes_citadas
 
     if any(k in msg_lower for k in ["resumen", "estado", "general", "cuenta", "metricas generales"]):
         res = await mcp_registry.execute_tool("obtener_resumen_empresa", {}, actor, db)
@@ -207,7 +234,7 @@ async def _ejecutar_fallback_deterministico(
                 f"- **Respuestas recolectadas:** {d.get('total_respuestas')}\n"
                 f"- **Operadores activos:** {d.get('total_operadores')}"
             )
-            return texto, tools_usadas
+            return texto, tools_usadas, fuentes_citadas
 
     if any(k in msg_lower for k in ["campaña", "campanas", "listar"]):
         res = await mcp_registry.execute_tool("listar_campanas_empresa", {"limite": 5}, actor, db)
@@ -216,9 +243,9 @@ async def _ejecutar_fallback_deterministico(
             d = res["data"]
             campanas = d.get("campanas", [])
             if not campanas:
-                return "Actualmente no tenés campañas registradas. Podés crear una desde la sección de Campañas.", tools_usadas
+                return "Actualmente no tenés campañas registradas. Podés crear una desde la sección de Campañas.", tools_usadas, fuentes_citadas
             lineas = [f"- **{c['nombre']}** (ID: `{c['id']}`) — {c['total_respuestas']} respuestas de {c['total_entregas']} envíos" for c in campanas]
-            return "### Tus campañas más recientes:\n" + "\n".join(lineas), tools_usadas
+            return "### Tus campañas más recientes:\n" + "\n".join(lineas), tools_usadas, fuentes_citadas
 
     if any(k in msg_lower for k in ["fraude", "alerta", "sospech"]) :
         res = await mcp_registry.execute_tool("consultar_alertas_fraude", {"limite": 5}, actor, db)
@@ -226,7 +253,7 @@ async def _ejecutar_fallback_deterministico(
         if res["success"]:
             d = res["data"]
             total = d.get("total_alertas", 0)
-            return f"Actualmente registrás **{total}** alertas de fraude detectadas en tus encuestas.", tools_usadas
+            return f"Actualmente registrás **{total}** alertas de fraude detectadas en tus encuestas.", tools_usadas, fuentes_citadas
 
     if any(k in msg_lower for k in ["pregunta", "suger", "recomiend"]):
         res = await mcp_registry.execute_tool("sugerir_preguntas_encuesta", {"objetivo": "Satisfacción de clientes"}, actor, db)
@@ -234,11 +261,12 @@ async def _ejecutar_fallback_deterministico(
         if res["success"]:
             d = res["data"]
             preguntas = [f"{p['orden']}. {p['texto']} *({p['tipo']})*" for p in d.get("preguntas", [])]
-            return "### Preguntas sugeridas para medir satisfacción:\n" + "\n".join(preguntas), tools_usadas
+            return "### Preguntas sugeridas para medir satisfacción:\n" + "\n".join(preguntas), tools_usadas, fuentes_citadas
 
     return (
         "Hola, soy tu Copiloto Inteligente de SurveySaaS. Puedo ayudarte a consultar el resumen de tu empresa, "
-        "revisar el estado de tus campañas, analizar métricas de rendimiento, inspeccionar alertas de fraude "
-        "o generar sugerencias de preguntas para tus nuevas encuestas. ¿Qué te gustaría consultar?",
+        "revisar el estado de tus campañas, analizar métricas de rendimiento, inspeccionar alertas de fraude, "
+        "buscar opiniones en el RAG o generar sugerencias de preguntas para tus nuevas encuestas. ¿Qué te gustaría consultar?",
+        [],
         []
     )

@@ -106,7 +106,9 @@ async def endpoint_generar_qr(
         resultado = await crear_orden_qr(db, suscriptor_id, payload)
         return resultado
     except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        err_msg = str(ve)
+        status_code = 404 if "no encontrado" in err_msg.lower() or "no existe" in err_msg.lower() else 400
+        raise HTTPException(status_code=status_code, detail=err_msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -126,7 +128,9 @@ async def endpoint_consultar_estado(
         resultado = await consultar_estado_transaccion(db, payment_number)
         return resultado
     except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
+        err_msg = str(ve)
+        status_code = 404 if "no encontrado" in err_msg.lower() or "no existe" in err_msg.lower() else 400
+        raise HTTPException(status_code=status_code, detail=err_msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

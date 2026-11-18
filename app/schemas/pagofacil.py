@@ -35,6 +35,7 @@ class GenerarQRResponse(BaseModel):
     es_fallback_tc: bool = False
     moneda: str
     plan_nombre: str
+    mensaje: Optional[str] = None
 
 class TipoCambioResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

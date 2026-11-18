@@ -67,6 +67,7 @@ async def startup_event():
     import app.models.rag_consulta
     import app.models.archivo_empresa
     import app.models.pagofacil
+    import app.models.copilot_session
 
     # Auto-create missing tables and migrate schema in database
     try:
@@ -154,6 +155,31 @@ async def startup_event():
                 );
             """))
             conn.execute(text("ALTER TABLE pagofacil_transaccion ADD COLUMN IF NOT EXISTS monto_qr NUMERIC(10, 4);"))
+
+            # Migraciones para sesiones e historial de Copilot MCP
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS copilot_sesion (
+                    id UUID PRIMARY KEY,
+                    suscriptor_id UUID REFERENCES suscriptor(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL,
+                    rol VARCHAR(50) NOT NULL DEFAULT 'empresa',
+                    titulo VARCHAR(255) NOT NULL DEFAULT 'Nueva conversación',
+                    campana_id UUID REFERENCES campana_encuesta(id) ON DELETE SET NULL,
+                    creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    actualizado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS copilot_mensaje (
+                    id UUID PRIMARY KEY,
+                    sesion_id UUID NOT NULL REFERENCES copilot_sesion(id) ON DELETE CASCADE,
+                    sender VARCHAR(20) NOT NULL,
+                    text TEXT NOT NULL,
+                    tools_used JSONB,
+                    fuentes_citadas JSONB,
+                    creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+            """))
 
             # Migraciones para embeddings en pgvector (RF22)
             try:
