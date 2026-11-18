@@ -76,9 +76,14 @@ async def startup_event():
             # Extensión pgvector (si está soportada en el servidor PostgreSQL)
             try:
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                conn.commit()
             except Exception as e_vec:
                 print(f"Nota: pgvector no pudo ser inicializado en PostgreSQL local/remoto ({e_vec})")
 
+        # 1. Crear todas las tablas del modelo que no existan
+        Base.metadata.create_all(bind=engine)
+
+        with engine.connect() as conn:
             conn.execute(text("ALTER TABLE rol ADD COLUMN IF NOT EXISTS descripcion VARCHAR;"))
             
             # Migraciones para plan_suscripcion
@@ -189,7 +194,6 @@ async def startup_event():
 
             conn.commit()
 
-        Base.metadata.create_all(bind=engine)
         print("Database tables verified/created/migrated successfully.")
     except Exception as e:
         print(f"Error creating/migrating tables: {e}")
