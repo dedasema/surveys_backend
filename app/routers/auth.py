@@ -409,21 +409,34 @@ async def request_registration(
         algorithm=settings.ALGORITHM
     )
 
-    # 4. Armar el link
+    # 4. Armar los links oficiales
     url_verificacion = f"{settings.clean_frontend_url}/verify-registration?token={token}"
+    url_terminos = f"{settings.clean_frontend_url}/terms"
+    url_privacidad = f"{settings.clean_frontend_url}/privacy"
+    url_software = f"{settings.clean_frontend_url}/login"
 
-    # 5. Enviar el email
-    from app.services.email_service import enviar_email_verificacion
-    enviado = await enviar_email_verificacion(
-        destinatario_email=payload.email,
-        destinatario_nombre=payload.nombre,
-        url_verificacion=url_verificacion
+    # 5. Enviar los 3 correos de validación, términos y bienvenida
+    from app.services.email_service import (
+        enviar_email_terminos,
+        enviar_email_privacidad,
+        enviar_email_bienvenida,
     )
 
-    if not enviado:
-        raise HTTPException(status_code=500, detail="No se pudo enviar el correo de verificación")
+    import asyncio
+    # Ejecutamos el envío de los 3 correos
+    try:
+        await asyncio.gather(
+            enviar_email_terminos(payload.email, payload.nombre, url_terminos),
+            enviar_email_privacidad(payload.email, payload.nombre, url_privacidad),
+            enviar_email_bienvenida(payload.email, payload.nombre, url_verificacion, url_software),
+            return_exceptions=True
+        )
+    except Exception as e:
+        logger.error(f"Error despachando correos de registro: {e}")
 
-    return {"message": "Correo de verificación enviado. Revisa tu bandeja de entrada."}
+    return {
+        "message": "Se han enviado 3 correos de verificación y bienvenida. Revisa tu bandeja de entrada."
+    }
 
 
 

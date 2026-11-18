@@ -195,6 +195,113 @@ async def enviar_email(
     return await _send_mail(destinatario_email, destinatario_nombre, asunto, html_content, text_content)
 
 
+async def enviar_email_terminos(
+    destinatario_email: str,
+    destinatario_nombre: str,
+    url_terminos: str
+) -> bool:
+    asunto = "Gracias por aceptar los Términos y Condiciones - SurveySaaS"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <h2 style="color: #1e293b; margin-top: 0;">Hola {destinatario_nombre},</h2>
+        <p style="color: #475569; font-size: 15px; line-height: 1.6;">
+            Te confirmamos que has aceptado formalmente los <strong>Términos y Condiciones de Uso</strong> de la plataforma <strong>SurveySaaS</strong>.
+        </p>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+            Puedes consultar y revisar los términos actualizados en cualquier momento a través del siguiente enlace oficial:
+        </p>
+        <div style="text-align: center; margin: 25px 0;">
+            <a href="{url_terminos}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block;">
+                Ver Términos y Condiciones
+            </a>
+        </div>
+        <p style="color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+            Este es un correo automático de verificación emitido por Desesoft SRL • Manzana 40, Santa Cruz de la Sierra, Bolivia.
+        </p>
+    </div>
+    """
+    text_content = f"""
+    Hola {destinatario_nombre},
+    Confirmamos que has aceptado los Términos y Condiciones de SurveySaaS.
+    Puedes consultarlos en: {url_terminos}
+    """
+    return await _send_mail(destinatario_email, destinatario_nombre, asunto, html_content, text_content)
+
+
+async def enviar_email_privacidad(
+    destinatario_email: str,
+    destinatario_nombre: str,
+    url_privacidad: str
+) -> bool:
+    asunto = "Gracias por aceptar nuestra Política de Privacidad - SurveySaaS"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <h2 style="color: #1e293b; margin-top: 0;">Hola {destinatario_nombre},</h2>
+        <p style="color: #475569; font-size: 15px; line-height: 1.6;">
+            Te confirmamos que has aceptado nuestra <strong>Política de Privacidad y Tratamiento de Datos</strong> en <strong>SurveySaaS</strong>.
+        </p>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+            Tus datos personales y la información de tus encuestas se gestionan bajo estándares internacionales de encriptación y aislamiento por organización.
+        </p>
+        <div style="text-align: center; margin: 25px 0;">
+            <a href="{url_privacidad}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; display: inline-block;">
+                Consultar Política de Privacidad
+            </a>
+        </div>
+        <p style="color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+            Deseosoft SRL • Santa Cruz de la Sierra, Bolivia.
+        </p>
+    </div>
+    """
+    text_content = f"""
+    Hola {destinatario_nombre},
+    Confirmamos que has aceptado nuestra Política de Privacidad en SurveySaaS.
+    Puedes consultarla en: {url_privacidad}
+    """
+    return await _send_mail(destinatario_email, destinatario_nombre, asunto, html_content, text_content)
+
+
+async def enviar_email_bienvenida(
+    destinatario_email: str,
+    destinatario_nombre: str,
+    url_verificacion: str,
+    url_software: str
+) -> bool:
+    asunto = "¡Bienvenido a SurveySaaS! Activa tu cuenta y accede al software"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 20px;">
+            <span style="font-size: 32px;">🚀</span>
+            <h2 style="color: #1e293b; margin: 10px 0 5px;">¡Bienvenido a SurveySaaS!</h2>
+            <p style="color: #64748b; font-size: 14px; margin: 0;">Plataforma de Encuestas Multicanal e Inteligencia Artificial</p>
+        </div>
+        <p style="color: #475569; font-size: 15px; line-height: 1.6;">
+            Hola <strong>{destinatario_nombre}</strong>, estamos encantados de que formes parte de nuestra comunidad.
+        </p>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+            Para activar tu acceso oficial y validar tu dirección de correo, haz clic en el siguiente botón:
+        </p>
+        <div style="text-align: center; margin: 25px 0;">
+            <a href="{url_verificacion}" style="background-color: #059669; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block;">
+                Activar Cuenta y Acceder al Software
+            </a>
+        </div>
+        <p style="color: #64748b; font-size: 13px;">
+            Enlace directo al software: <a href="{url_software}" style="color: #2563eb;">{url_software}</a>
+        </p>
+        <p style="color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+            Si no solicitaste esta cuenta, puedes desestimar este mensaje.
+        </p>
+    </div>
+    """
+    text_content = f"""
+    ¡Bienvenido a SurveySaaS, {destinatario_nombre}!
+    Para activar tu cuenta y acceder al software, visita: {url_verificacion}
+    Acceso directo: {url_software}
+    """
+    return await _send_mail(destinatario_email, destinatario_nombre, asunto, html_content, text_content)
+
+
 async def enviar_email_verificacion(
     destinatario_email: str,
     destinatario_nombre: str,
