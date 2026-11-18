@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import engine, Base
+from app.core.config import settings
 from app.models.audit_log import AuditLog
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -18,6 +19,7 @@ os.makedirs("uploads/audio", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 origins = [
+    "https://dgqv4314frd93.cloudfront.net",
     "https://surveysfrontend.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
@@ -25,11 +27,13 @@ origins = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
 ]
+if settings.clean_frontend_url and settings.clean_frontend_url not in origins:
+    origins.append(settings.clean_frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*(\.vercel\.app|\.cloudfront\.net)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
