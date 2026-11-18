@@ -473,9 +473,11 @@ from app.routers.copilot_router import (
     router as copilot_router,
     agente_copilot_alias_router
 )
+from app.routers.contacto_router import router as contacto_router
 
 # Registrar routers modulares
 app.include_router(auth_router)
+app.include_router(contacto_router)
 app.include_router(catalogos_router)
 app.include_router(subscription_router)
 app.include_router(admin_router)

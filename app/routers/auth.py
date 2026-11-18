@@ -1,7 +1,7 @@
 # app/routers/auth.py
 
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Body, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Body, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -163,7 +163,23 @@ def login(
     if not user or not verify_password(password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales invÃƒÂ¡lidas"
+            detail="Credenciales inválidas"
+        )
+
+    # Validar estado de la empresa/suscriptor antes de autorizar login
+    if isinstance(user, Suscriptor):
+        estado_sus = getattr(user, "estado", "") or ""
+        if estado_sus.strip().lower() in ["pendiente", "inactivo"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Debes verificar tu correo electrónico antes de ingresar. Revisa el correo de bienvenida que te enviamos."
+            )
+
+    # Validar si el operador/cuenta de usuario está activa
+    if isinstance(user, CuentaUsuario) and not getattr(user, "activo", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tu cuenta de usuario se encuentra inactiva. Contacta al administrador."
         )
 
     # obtengo el nombre del rol y permisos para el token
@@ -374,32 +390,53 @@ async def request_registration(
     payload: SuscriptorCreate,
     db: Session = Depends(get_db)
 ):
-    # 1. Verifica que el email no esté registrado
-    if db.query(Suscriptor).filter_by(email=payload.email).first():
-        raise HTTPException(status_code=400, detail="El email ya está registrado")
+    from uuid import uuid4
+    from datetime import datetime, timezone, timedelta
+    import jwt
+    from app.core.security import hash_password
 
-    # 2. Verifica que no haya un admin o cuenta_usuario con ese email (por seguridad)
+    # 1. Verifica que no haya un admin o cuenta_usuario con ese email
     if db.query(Administrador).filter_by(email=payload.email).first():
         raise HTTPException(status_code=400, detail="El email ya está registrado")
     if db.query(CuentaUsuario).filter_by(email=payload.email).first():
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
-    # 3. Generar el token (JWT) con datos del registro
-    from app.core.security import hash_password
-    from app.core.security import create_access_token
-    from datetime import timedelta
-
+    # 2. Verifica si la empresa ya existe en BD
     password_hash = hash_password(payload.password)
+    sus_existente = db.query(Suscriptor).filter_by(email=payload.email).first()
 
-    # Creamos un payload simple
-    from datetime import datetime, timezone
-    import jwt
+    if sus_existente:
+        if sus_existente.estado and sus_existente.estado.lower() == "activo":
+            raise HTTPException(status_code=400, detail="El email ya está registrado")
+        # Si estaba en estado pendiente/inactivo, actualizamos datos y regeneramos credenciales
+        sus = sus_existente
+        sus.nombre = payload.nombre
+        sus.telefono = payload.telefono
+        sus.password_hash = password_hash
+        sus.estado = "pendiente"
+        db.commit()
+        db.refresh(sus)
+    else:
+        rol_empresa = db.query(Rol).filter_by(nombre="empresa").first()
+        sus = Suscriptor(
+            id=uuid4(),
+            nombre=payload.nombre,
+            email=payload.email,
+            telefono=payload.telefono,
+            password_hash=password_hash,
+            rol_id=rol_empresa.id if rol_empresa else 1,
+            estado="pendiente"
+        )
+        db.add(sus)
+        db.commit()
+        db.refresh(sus)
 
+    # 3. Generar el token (JWT) de verificación por correo
     token_data = {
         "sub": payload.email,
         "nombre": payload.nombre,
         "telefono": payload.telefono,
-        "password_hash": password_hash,
+        "suscriptor_id": str(sus.id),
         "exp": datetime.now(timezone.utc) + timedelta(hours=24)
     }
 
@@ -409,10 +446,10 @@ async def request_registration(
         algorithm=settings.ALGORITHM
     )
 
-    # 4. Armar los links oficiales
-    url_verificacion = f"{settings.clean_frontend_url}/verify-registration?token={token}"
-    url_terminos = f"{settings.clean_frontend_url}/terms"
-    url_privacidad = f"{settings.clean_frontend_url}/privacy"
+    # 4. Armar los links oficiales para la Landing Page y correos
+    url_verificacion = f"{settings.clean_frontend_url}/verificar-registro?token={token}"
+    url_terminos = f"{settings.clean_frontend_url}/terminos"
+    url_privacidad = f"{settings.clean_frontend_url}/privacidad"
     url_software = f"{settings.clean_frontend_url}/login"
 
     # 5. Enviar los 3 correos de validación, términos y bienvenida
@@ -423,7 +460,6 @@ async def request_registration(
     )
 
     import asyncio
-    # Ejecutamos el envío de los 3 correos
     try:
         await asyncio.gather(
             enviar_email_terminos(payload.email, payload.nombre, url_terminos),
@@ -439,10 +475,12 @@ async def request_registration(
     }
 
 
-
 @router.get("/verify-registration")
+@router.get("/verificar-registro")
+@router.post("/verify-registration")
+@router.post("/verificar-registro")
 def verify_registration(
-    token: str,
+    token: str = Query(..., description="Token JWT de verificación de registro"),
     db: Session = Depends(get_db)
 ):
     import jwt
@@ -458,44 +496,49 @@ def verify_registration(
             algorithms=[settings.ALGORITHM]
         )
 
-        email = payload["sub"]
-        nombre = payload["nombre"]
-        telefono = payload["telefono"]
-        password_hash = payload["password_hash"]
-
-        # Verificar que el email no esté registrado
-        if db.query(Suscriptor).filter_by(email=email).first():
-            raise HTTPException(status_code=400, detail="El email ya está registrado")
-        if db.query(Administrador).filter_by(email=email).first():
-            raise HTTPException(status_code=400, detail="El email ya está registrado")
-        if db.query(CuentaUsuario).filter_by(email=email).first():
-            raise HTTPException(status_code=400, detail="El email ya está registrado")
+        email = payload.get("sub")
+        nombre = payload.get("nombre", "")
+        telefono = payload.get("telefono")
 
         # Buscar el rol de empresa
         rol_empresa = db.query(Rol).filter_by(nombre="empresa").first()
         if not rol_empresa:
-            raise HTTPException(status_code=500, detail="Rol 'empresa' no configurado")
+            rol_empresa = db.get(Rol, 1)
+        if not rol_empresa:
+            rol_empresa = Rol(id=1, nombre="empresa")
+            db.add(rol_empresa)
+            db.commit()
 
-        # Crear el suscriptor
-        sus = Suscriptor(
-            id=uuid4(),
-            nombre=nombre,
-            email=email,
-            telefono=telefono,
-            password_hash=password_hash,
-            rol_id=rol_empresa.id,
-            estado="inactivo"
-        )
-        db.add(sus)
+        # Buscar suscriptor por email
+        sus = db.query(Suscriptor).filter_by(email=email).first()
+        if sus:
+            sus.estado = "activo"
+        else:
+            sus = Suscriptor(
+                id=uuid4(),
+                nombre=nombre,
+                email=email,
+                telefono=telefono,
+                password_hash=payload.get("password_hash", ""),
+                rol_id=rol_empresa.id if rol_empresa else 1,
+                estado="activo"
+            )
+            db.add(sus)
+
         db.commit()
         db.refresh(sus)
 
-        # Generar access_token
-        access_token = create_access_token(subject=str(sus.id), role=rol_empresa.nombre)
+        # Generar access_token y refresh_token
+        role_name = rol_empresa.nombre if rol_empresa else "empresa"
+        access_token = create_access_token(subject=str(sus.id), role=role_name)
+        refresh_token = create_refresh_token(db, sus.id)
 
         return {
             "message": "Cuenta activada correctamente",
-            "access_token": access_token
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "estado": "activo"
         }
 
     except ExpiredSignatureError:

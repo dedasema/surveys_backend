@@ -124,7 +124,8 @@ async def _send_mail(
         clean_password = settings.SMTP_PASSWORD.replace(" ", "").strip()
         message = MIMEMultipart("alternative")
         message["Subject"] = Header(asunto, "utf-8")
-        message["From"] = f"{settings.SMTP_USERNAME}"
+        sender_email = settings.EMAIL_FROM or settings.SMTP_USERNAME or "dedasema734012@gmail.com"
+        message["From"] = f"SurveySaaS <{sender_email}>" if "@" in sender_email and "<" not in sender_email else sender_email
         message["To"] = f"{destinatario_nombre} <{destinatario_email}>"
         message.attach(MIMEText(text_content, "plain"))
         message.attach(MIMEText(html_content, "html"))
