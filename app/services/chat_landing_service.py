@@ -25,10 +25,10 @@ CONOCIMIENTO CLAVE DEL PRODUCTO:
    - Enlaces Web y QR: Formularios responsivos para WhatsApp, emails o redes sociales.
    - Papel con Escaneo OCR: Generación de formularios PDF imprimibles con QR de trazabilidad y digitalización automática de respuestas manuscritas con visión artificial.
    - Analítica Avanzada: Detección de fraude, clustering semántico de opiniones y reportes ejecutivos.
-2. Planes y Precios:
-   - Plan Gratuito ($0.00 USD/mes): 3 plantillas, 100 respuestas/mes, 1 operador, canal email y web, prueba de IA/OCR.
-   - Plan Profesional ($29.99 USD/mes): 50 plantillas, 5.000 respuestas/mes, 5 operadores, OCR papel con IA, análisis de audio y voz con IA, reportes avanzados.
-   - Plan Enterprise ($99.99 USD/mes): Plantillas y campañas ilimitadas, 50.000 respuestas/mes, 20 operadores, soporte dedicado SLA y modelos LLM personalizados.
+2. Planes y Precios Oficiales:
+   - Plan Gratuito ($0.00 USD/mes): 3 plantillas de encuestas, 100 respuestas/mes, 1 operador de equipo, canales email y web, prueba de OCR e IA.
+   - Plan Profesional ($29.99 USD/mes): 50 plantillas, 5.000 respuestas/mes, 5 operadores de equipo, OCR papel con IA, análisis de audio y voz con IA, reportes avanzados.
+   - Plan Enterprise ($99.99 USD/mes): Plantillas, campañas, respuestas y operadores ILIMITADOS, OCR papel y asistente de voz, exportación completa, acceso a API y soporte prioritario con SLA.
 3. Seguridad y Privacidad:
    - Cifrado TLS 1.3 en tránsito y AES-256 en reposo.
    - Aislamiento multi-tenant estricto (los datos de cada empresa están 100% segregados).
@@ -83,9 +83,9 @@ def _smart_fallback_response(message: str) -> str:
     if any(k in msg_lower for k in ["precio", "plan", "costo", "cuanto", "cuánto", "tarifa"]):
         return (
             "¡Hola! En **SurveySaaS** disponemos de 3 planes adaptados a cada etapa de tu empresa:\n\n"
-            "• **Plan Gratuito ($0 USD/mes)**: 3 plantillas, 100 respuestas al mes, 1 operador y acceso a canales web/email con prueba de OCR e IA.\n"
+            "• **Plan Gratuito ($0.00 USD/mes)**: 3 plantillas, 100 respuestas al mes, 1 operador y acceso a canales web/email con prueba de OCR e IA.\n"
             "• **Plan Profesional ($29.99 USD/mes)**: 50 plantillas, 5.000 respuestas/mes, 5 operadores, análisis de audio/voz y OCR papel con IA.\n"
-            "• **Plan Enterprise ($99.99 USD/mes)**: Plantillas y campañas ilimitadas, 50.000 respuestas/mes, 20 operadores y SLA dedicado.\n\n"
+            "• **Plan Enterprise ($99.99 USD/mes)**: Plantillas, campañas, respuestas y operadores ilimitados, OCR papel, asistente de voz, API y SLA prioritario.\n\n"
             "Podés registrarte gratis ahora mismo en `/register` o comparar la tabla en la sección `#precios`."
         )
     elif any(k in msg_lower for k in ["voz", "audio", "llamada", "habla", "whisper"]):
@@ -154,41 +154,11 @@ async def _call_gemini_landing(message: str, history: Optional[List[ChatMessageI
 
     return None
 
-async def _call_openai_landing(message: str, history: Optional[List[ChatMessageItem]]) -> Optional[str]:
-    openai_key = (settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "")).strip()
-    if not openai_key:
-        return None
-
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=openai_key)
-
-        messages = [{"role": "system", "content": SYSTEM_PROMPT_LANDING}]
-        if history:
-            for item in history[-8:]:
-                role = "user" if item.sender == "user" else "assistant"
-                messages.append({"role": role, "content": item.text})
-
-        messages.append({"role": "user", "content": message})
-
-        resp = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=messages,
-            temperature=0.4,
-            max_tokens=800
-        )
-        if resp.choices:
-            return resp.choices[0].message.content.strip()
-    except Exception as e:
-        logger.warning(f"Error llamando a OpenAI para chat landing: {e}")
-
-    return None
-
 async def chat_landing_completion(
     message: str,
     history: Optional[List[ChatMessageItem]] = None
 ) -> ChatLandingOut:
-    """Procesa una consulta del chatbot público de la Landing Page con multi-turn y acciones."""
+    """Procesa una consulta del chatbot público de la Landing Page usando Gemini con fallback contextual."""
     clean_msg = message.strip()
     if not clean_msg:
         return ChatLandingOut(
@@ -202,11 +172,7 @@ async def chat_landing_completion(
     # 1. Intentar con Gemini
     answer = await _call_gemini_landing(clean_msg, history)
 
-    # 2. Si Gemini no está disponible o falla, intentar con OpenAI
-    if not answer:
-        answer = await _call_openai_landing(clean_msg, history)
-
-    # 3. Si ambos fallan o no hay keys configuradas, usar fallback estructurado inteligente
+    # 2. Si Gemini no está disponible o falla, usar fallback estructurado inteligente
     if not answer:
         answer = _smart_fallback_response(clean_msg)
 
