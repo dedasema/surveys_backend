@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     tctokensecret: Optional[str] = os.getenv("tctokensecret", os.getenv("tcTokenSecret", os.getenv("TCTOKENSECRET", "")))
     PAGOFACIL_BASE_URL: str = os.getenv("PAGOFACIL_BASE_URL", "https://masterqr.pagofacil.com.bo/api/services/v2")
     PAGOFACIL_CALLBACK_URL: Optional[str] = os.getenv("PAGOFACIL_CALLBACK_URL", "")
+    AWS_ACCESS_KEY_ID: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+    AWS_S3_BUCKET_NAME: Optional[str] = os.getenv("AWS_S3_BUCKET_NAME", "")
+    AWS_S3_CUSTOM_DOMAIN: Optional[str] = os.getenv("AWS_S3_CUSTOM_DOMAIN", "")
 
     @property
     def pagofacil_token_service(self) -> str:

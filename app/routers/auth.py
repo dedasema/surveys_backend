@@ -27,6 +27,7 @@ from app.schemas.auth import (
 from uuid import UUID
 
 from app.services.email_service import enviar_email_recuperacion_contrasena, enviar_email_verificacion
+from app.services.s3_service import is_s3_configured, upload_file_to_s3
 import secrets, jwt
 from typing import List
 
@@ -345,20 +346,27 @@ async def upload_foto_perfil(
     token_data: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if not file.content_type.startswith("image/"):
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="El archivo subido debe ser una imagen (JPG, PNG, WEBP, GIF)")
 
-    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
     from uuid import uuid4
-    import os
-    filename = f"avatar_{token_data.sub}_{uuid4().hex[:8]}.{ext}"
-    file_path = os.path.join("uploads", "avatars", filename)
 
-    contents = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(contents)
+    ext = file.filename.split(".")[-1] if (file.filename and "." in file.filename) else "jpg"
+    s3_key = f"avatars/{token_data.sub}_{uuid4().hex[:8]}.{ext}"
 
-    foto_url = f"/uploads/avatars/{filename}"
+    if is_s3_configured():
+        foto_url = await upload_file_to_s3(file, s3_key)
+    else:
+        # Fallback local para desarrollo o entornos de test sin credenciales de S3
+        import os
+        os.makedirs(os.path.join("uploads", "avatars"), exist_ok=True)
+        filename = f"avatar_{token_data.sub}_{uuid4().hex[:8]}.{ext}"
+        file_path = os.path.join("uploads", "avatars", filename)
+        file.file.seek(0)
+        contents = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        foto_url = f"/uploads/avatars/{filename}"
 
     role = token_data.role
     user_id = UUID(token_data.sub)
@@ -377,8 +385,9 @@ async def upload_foto_perfil(
     db.commit()
 
     return {
-        "foto_url": foto_url,
-        "message": "Foto de perfil actualizada exitosamente"
+        "mensaje": "Foto de perfil actualizada exitosamente",
+        "message": "Foto de perfil actualizada exitosamente",
+        "foto_url": foto_url
     }
 
 
