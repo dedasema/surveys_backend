@@ -120,3 +120,28 @@ def test_mcp_rag_tool_execution(client, db_session, empresa_headers):
     content_data = json.loads(data["result"]["content"][0]["text"])
     assert "pregunta" in content_data
     assert "fuentes_citadas" in content_data
+
+def test_admin_blocked_from_copilot(client, db_session, admin_headers):
+    """
+    Verifica que un usuario con rol 'admin' (SuperAdmin) sea rechazado con 403 Forbidden
+    tanto en /copilot/chat como en /copilot/sessions.
+    """
+    # 1. Probar en /copilot/chat
+    chat_res = client.post("/copilot/chat", json={"message": "Hola"}, headers=admin_headers)
+    assert chat_res.status_code == 403
+    assert "El Copiloto Inteligente MCP está disponible exclusivamente para empresas suscriptoras." in chat_res.json()["detail"]
+
+    # 2. Probar en /agente/copilot (alias)
+    alias_res = client.post("/agente/copilot", json={"message": "Hola"}, headers=admin_headers)
+    assert alias_res.status_code == 403
+    assert "El Copiloto Inteligente MCP está disponible exclusivamente para empresas suscriptoras." in alias_res.json()["detail"]
+
+    # 3. Probar en /copilot/sessions (GET)
+    get_res = client.get("/copilot/sessions", headers=admin_headers)
+    assert get_res.status_code == 403
+    assert "El Copiloto Inteligente MCP está disponible exclusivamente para empresas suscriptoras." in get_res.json()["detail"]
+
+    # 4. Probar en /copilot/sessions (POST)
+    post_res = client.post("/copilot/sessions", json={"title": "Test"}, headers=admin_headers)
+    assert post_res.status_code == 403
+    assert "El Copiloto Inteligente MCP está disponible exclusivamente para empresas suscriptoras." in post_res.json()["detail"]

@@ -33,18 +33,18 @@ agente_copilot_alias_router = APIRouter(
     tags=["Copiloto Inteligente (SaaS AI)"]
 )
 
+def _validar_rol_copilot(token_data: TokenData, actor) -> None:
+    if actor.es_admin() or token_data.role == "admin" or not actor.suscriptor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El Copiloto Inteligente MCP está disponible exclusivamente para empresas suscriptoras."
+        )
+
 def _verificar_acceso_sesion(sesion: CopilotSesion, actor) -> None:
-    if actor.es_admin():
-        return
-    if actor.suscriptor_id and sesion.suscriptor_id != actor.suscriptor_id:
+    if not actor.suscriptor_id or sesion.suscriptor_id != actor.suscriptor_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acceso denegado: esta sesión de chat pertenece a otra empresa."
-        )
-    if not actor.suscriptor_id and sesion.user_id != actor.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso denegado a esta sesión de chat."
         )
 
 
@@ -56,16 +56,14 @@ async def list_copilot_sessions(
     token_data: TokenData = Depends(get_current_user)
 ):
     actor = resolver_actor_context(db, token_data)
-    query = db.query(CopilotSesion)
+    _validar_rol_copilot(token_data, actor)
 
-    if actor.es_admin():
-        pass
-    elif actor.suscriptor_id:
-        query = query.filter(CopilotSesion.suscriptor_id == actor.suscriptor_id)
-    else:
-        query = query.filter(CopilotSesion.user_id == actor.user_id)
-
-    sesiones = query.order_by(CopilotSesion.actualizado_en.desc()).all()
+    sesiones = (
+        db.query(CopilotSesion)
+        .filter(CopilotSesion.suscriptor_id == actor.suscriptor_id)
+        .order_by(CopilotSesion.actualizado_en.desc())
+        .all()
+    )
 
     resultados = []
     for s in sesiones:
@@ -89,6 +87,7 @@ async def create_copilot_session(
     token_data: TokenData = Depends(get_current_user)
 ):
     actor = resolver_actor_context(db, token_data)
+    _validar_rol_copilot(token_data, actor)
     now = datetime.now(timezone.utc)
 
     nueva_sesion = CopilotSesion(
@@ -121,6 +120,7 @@ async def get_session_messages(
     token_data: TokenData = Depends(get_current_user)
 ):
     actor = resolver_actor_context(db, token_data)
+    _validar_rol_copilot(token_data, actor)
     sesion = db.query(CopilotSesion).filter(CopilotSesion.id == session_id).first()
     if not sesion:
         raise HTTPException(status_code=404, detail="Sesión no encontrada")
@@ -154,6 +154,7 @@ async def delete_copilot_session(
     token_data: TokenData = Depends(get_current_user)
 ):
     actor = resolver_actor_context(db, token_data)
+    _validar_rol_copilot(token_data, actor)
     sesion = db.query(CopilotSesion).filter(CopilotSesion.id == session_id).first()
     if not sesion:
         raise HTTPException(status_code=404, detail="Sesión no encontrada")
@@ -182,6 +183,7 @@ async def chat_copilot_endpoint(
     - Garantiza aislamiento multi-tenant estricto.
     """
     actor = resolver_actor_context(db, token_data)
+    _validar_rol_copilot(token_data, actor)
     now = datetime.now(timezone.utc)
 
     # 1. Resolver o crear la sesión
