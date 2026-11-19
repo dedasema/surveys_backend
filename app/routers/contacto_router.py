@@ -91,16 +91,22 @@ class EliminarDatosPersonaRequest(BaseModel):
     motivo: str = "Solicitud de ejercicio de derechos sobre datos personales"
 
 
-class SolicitarDemoCreate(BaseModel):
+class SolicitudDemoCreate(BaseModel):
     email: EmailStr
     nombre: Optional[str] = None
     empresa: Optional[str] = None
     telefono: Optional[str] = None
 
 
-class SolicitarDemoResponse(BaseModel):
+SolicitarDemoCreate = SolicitudDemoCreate
+
+
+class SolicitudDemoResponse(BaseModel):
     success: bool
     message: str
+
+
+SolicitarDemoResponse = SolicitudDemoResponse
 
 
 @router.post(
@@ -211,30 +217,65 @@ def eliminar_datos_persona_endpoint(
 
 # ---------------- Solicitud de Demos ----------------
 
-@router.post("/solicitar-demo", response_model=SolicitarDemoResponse, status_code=status.HTTP_201_CREATED)
-@router.post("/leads/demo", response_model=SolicitarDemoResponse, status_code=status.HTTP_201_CREATED)
-async def solicitar_demo(payload: SolicitarDemoCreate):
+@router.post(
+    "/solicitar-demo",
+    response_model=SolicitudDemoResponse,
+    status_code=status.HTTP_200_OK,
+)
+@router.post(
+    "/leads/demo",
+    response_model=SolicitudDemoResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def solicitar_demo(
+    payload: SolicitudDemoCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """
-    Captura una solicitud de demo personalizada desde el banner principal de la Landing Page
-    y despacha una alerta comercial prioritaria al correo administrativo,
-    además de un correo de cortesía al usuario solicitante.
+    Captura una solicitud de demo personalizada desde el banner principal de la Landing Page,
+    la registra en base de datos (tabla contacto), despacha una alerta comercial prioritaria
+    al correo comercial de la empresa y envía un correo de confirmación al solicitante.
     """
-    destinatario_admin = (
+    forwarded = request.headers.get("x-forwarded-for")
+    ip_origen = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else (request.client.host if request.client else None)
+    )
+
+    # 1. Registrar la solicitud en la base de datos (tabla contacto)
+    contacto_demo = Contacto(
+        nombre=payload.nombre or "Solicitud Demo",
+        email=payload.email,
+        empresa=payload.empresa,
+        mensaje=f"Solicitud de Demo Personalizada. Empresa: {payload.empresa or 'No especificada'}",
+        origen="producto",
+        tipo="comercial",
+        ip_origen=ip_origen,
+    )
+    db.add(contacto_demo)
+    db.commit()
+    db.refresh(contacto_demo)
+
+    # 2. Casilla comercial de la empresa
+    destinatario_comercial = (
+        getattr(settings, "COMERCIAL_EMAIL", None) or
         getattr(settings, "ADMIN_NOTIFICATION_EMAIL", None) or
         settings.EMAIL_FROM or
         settings.SMTP_USERNAME or
-        "dedasema734012@gmail.com"
+        "soporte@desesoft.com"
     ).strip()
 
     fecha_solicitud = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
-    asunto_admin = f"🎯 Solicitud de Demo Personalizada: {payload.email}"
+    asunto_comercial = "🚀 Nueva solicitud de Demo Personalizada - SurveySaaS"
 
-    html_admin = f"""
+    html_comercial = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
         <div style="background-color: #eff6ff; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2563eb;">
-            <span style="font-weight: bold; color: #1e40af; font-size: 14px;">🔥 PROSPECTO DE ALTA PRIORIDAD • DEMO SOLICITADA</span>
+            <span style="font-weight: bold; color: #1e40af; font-size: 14px;">🔥 PROSPECTO COMERCIAL • DEMO PERSONALIZADA</span>
         </div>
-        <h2 style="color: #1e293b; margin-top: 0;">Nueva Solicitud de Demo desde Landing Page</h2>
+        <h2 style="color: #1e293b; margin-top: 0;">🚀 Nueva solicitud de Demo Personalizada</h2>
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
             <tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 10px; font-weight: bold; color: #475569; width: 140px;">Email:</td>
@@ -258,14 +299,14 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
             </tr>
         </table>
         <p style="color: #94a3b8; font-size: 12px; margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-            Notificación automática de SurveySaaS CRM • Registro instantáneo de demo comercial.<br>
+            Notificación automática de SurveySaaS CRM • Registro de solicitud de demo en BD ({contacto_demo.id}).<br>
             Impulsado por Desesoft — SurveySaaS
         </p>
     </div>
     """
 
-    text_admin = f"""
-    🎯 Solicitud de Demo Personalizada:
+    text_comercial = f"""
+    🚀 Nueva solicitud de Demo Personalizada - SurveySaaS:
     - Email: {payload.email}
     - Nombre: {payload.nombre or 'No especificado'}
     - Empresa: {payload.empresa or 'No especificada'}
@@ -278,14 +319,18 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
 
     try:
         await _send_mail(
-            destinatario_email=destinatario_admin,
-            destinatario_nombre="Admin SurveySaaS",
-            asunto=asunto_admin,
-            html_content=html_admin,
-            text_content=text_admin,
+            destinatario_email=destinatario_comercial,
+            destinatario_nombre="Equipo Comercial SurveySaaS",
+            asunto=asunto_comercial,
+            html_content=html_comercial,
+            text_content=text_comercial,
         )
     except Exception as e:
-        logger.error("Error despachando correo de solicitud de demo a %s: %s", destinatario_admin, e)
+        logger.error(
+            "Error despachando correo de solicitud de demo a %s: %s",
+            destinatario_comercial,
+            e,
+        )
 
     try:
         nombre_cliente = payload.nombre or "Colega"
@@ -334,9 +379,13 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
             text_content=text_cliente,
         )
     except Exception as e_c:
-        logger.warning("No se pudo enviar correo de confirmación de demo a %s: %s", payload.email, e_c)
+        logger.warning(
+            "No se pudo enviar correo de confirmación de demo a %s: %s",
+            payload.email,
+            e_c,
+        )
 
-    return SolicitarDemoResponse(
+    return SolicitudDemoResponse(
         success=True,
-        message="Solicitud de demo recibida exitosamente. Nos pondremos en contacto contigo a la brevedad.",
+        message="Solicitud de demo recibida con éxito",
     )

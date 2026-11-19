@@ -2,9 +2,10 @@
 FastAPI Routers for Respuestas and Public Surveys.
 """
 
-from typing import List, Dict, Any
+from datetime import datetime, timezone
+from typing import List, Any, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Header, Query
 from sqlalchemy.orm import Session
 import jwt
 
@@ -12,21 +13,18 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.core.constants import ESTADO_RESPONDIDO
+from app.models.survey import EntregaEncuesta
 from app.schemas.auth import TokenData
 from app.schemas.respuestas_schema import (
     RespuestaEncuestaCreate,
-    RespuestaEncuestaUpdate,
     RespuestaEncuestaOut,
-    RespuestaCreateEmail,
 )
-from app.services.entregas_service import get_entrega, mark_as_responded
+from app.services.entregas_service import get_entrega
 from app.services.shared_service import get_entrega_con_plantilla
 from app.services.respuestas_service import (
     create_respuesta,
     get_respuesta,
     list_respuestas_by_entrega,
-    update_respuesta,
-    delete_respuesta,
     registrar_respuestas_publicas,
 )
 
@@ -167,10 +165,19 @@ async def verificar_token_endpoint(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Token inválido: {str(e)}")
 
 
-@encuestas_public_router.post("/responder/{token}", status_code=status.HTTP_201_CREATED)
+@encuestas_public_router.post("/responder/{token}", status_code=status.HTTP_200_OK)
 async def responder_encuesta_email_endpoint(
     token: str,
-    payload: RespuestaCreateEmail,
+    payload: Any = Body(...),
+    consentimiento_aceptado: bool = Query(
+        True,
+        description="Confirmación de consentimiento informado del encuestado",
+    ),
+    x_consentimiento_aceptado: Optional[str] = Header(
+        None,
+        alias="X-Consentimiento-Aceptado",
+        description="Header alternativo para consentimiento informado",
+    ),
     db: Session = Depends(get_db),
 ):
     try:
@@ -180,7 +187,65 @@ async def responder_encuesta_email_endpoint(
         except Exception:
             entrega_id = UUID(token)
 
-        return registrar_respuestas_publicas(db, entrega_id, payload)
+        # Resolver consentimiento informado (prioridad al header si se especifica)
+        consentimiento_final = consentimiento_aceptado
+        if x_consentimiento_aceptado is not None:
+            consentimiento_final = x_consentimiento_aceptado.strip().lower() in (
+                "true", "1", "yes", "si"
+            )
+
+        # Normalizar payload
+        if isinstance(payload, list):
+            items = payload
+        elif isinstance(payload, dict):
+            if "respuestas_preguntas" in payload:
+                items = payload["respuestas_preguntas"]
+            elif "respuestas" in payload:
+                items = payload["respuestas"]
+            else:
+                items = [payload]
+        else:
+            items = [payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()]
+
+        normalized_items = []
+        for it in items:
+            if hasattr(it, "model_dump"):
+                normalized_items.append(it.model_dump())
+            elif hasattr(it, "dict"):
+                normalized_items.append(it.dict())
+            elif isinstance(it, dict):
+                normalized_items.append(it)
+
+        # Registrar respuestas
+        resp = await registrar_respuestas_publicas(
+            db,
+            entrega_id,
+            {"respuestas_preguntas": normalized_items},
+        )
+
+        # Guardar confirmación y marca temporal del consentimiento informado
+        entrega = (
+            db.get(EntregaEncuesta, entrega_id)
+            if hasattr(db, "get")
+            else db.query(EntregaEncuesta).filter(EntregaEncuesta.id == entrega_id).first()
+        )
+        if entrega:
+            entrega.consentimiento_aceptado = bool(consentimiento_final)
+            entrega.consentimiento_en = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(entrega)
+
+        return {
+            "status": "success",
+            "message": "Respuestas guardadas correctamente",
+            "respuesta_id": str(resp.id),
+            "consentimiento_aceptado": bool(consentimiento_final),
+            "consentimiento_en": (
+                entrega.consentimiento_en.isoformat()
+                if entrega and entrega.consentimiento_en
+                else None
+            ),
+        }
     except HTTPException:
         raise
     except Exception as e:

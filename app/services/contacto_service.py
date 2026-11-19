@@ -98,6 +98,17 @@ async def despachar_correo_contacto(contacto: Contacto, sender=None) -> bool:
         "dedasema734012@gmail.com"
     ).strip()
 
+    destinatario_comercial = (
+        getattr(settings, "COMERCIAL_EMAIL", None) or
+        "soporte@desesoft.com"
+    ).strip()
+
+    destinatario_destino = (
+        destinatario_comercial
+        if contacto.tipo == ContactoTipoEnum.comercial.value
+        else destinatario_admin
+    )
+
     tipo_label = formatear_tipo_label(contacto.tipo)
     origen_val = contacto.origen
 
@@ -171,7 +182,13 @@ async def despachar_correo_contacto(contacto: Contacto, sender=None) -> bool:
     Impulsado por Desesoft — SurveySaaS
     """
 
-    return await send_fn(destinatario_admin, "Administrador Desesoft", asunto, html_content, text_content)
+    return await send_fn(
+        destinatario_destino,
+        "Equipo Desesoft",
+        asunto,
+        html_content,
+        text_content,
+    )
 
 
 def eliminar_datos_personales_procedimiento(
