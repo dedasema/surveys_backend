@@ -51,3 +51,48 @@ def test_entrega_lifecycle_transitions():
     # 3. Intentar volver a enviado tras respondido falla
     with pytest.raises(EntregaInvalidTransitionError):
         entrega.marcar_como_enviado()
+
+
+def test_entrega_detail_out_schema_with_orm_models():
+    """Ensure EntregaDetailOut correctly serializes nested ORM-like response models."""
+    from datetime import datetime, timezone
+    from app.schemas.entregas_schema import EntregaDetailOut
+
+    class DummyRespuestaPregunta:
+        def __init__(self):
+            self.id = uuid4()
+            self.pregunta_id = uuid4()
+            self.texto = "Excelente servicio"
+            self.numero = 9.5
+            self.opcion_id = None
+            self.metadatos = {"canal": "web"}
+
+    class DummyRespuesta:
+        def __init__(self):
+            self.id = uuid4()
+            self.entrega_id = uuid4()
+            self.recibido_en = datetime.now(timezone.utc)
+            self.puntuacion = 10.0
+            self.raw_payload = {"source": "mobile"}
+            self.respuestas_preguntas = [DummyRespuestaPregunta()]
+
+    class DummyEntrega:
+        def __init__(self):
+            self.id = uuid4()
+            self.campana_id = uuid4()
+            self.canal_id = 1
+            self.destinatario_id = None
+            self.estado_id = 3
+            self.enviado_en = datetime.now(timezone.utc)
+            self.respondido_en = datetime.now(timezone.utc)
+            self.destinatario = None
+            self.consentimiento_aceptado = True
+            self.consentimiento_en = datetime.now(timezone.utc)
+            self.respuestas = [DummyRespuesta()]
+
+    dummy = DummyEntrega()
+    out = EntregaDetailOut.model_validate(dummy)
+    assert out.id == dummy.id
+    assert len(out.respuestas) == 1
+    assert out.respuestas[0].respuestas_preguntas[0].texto == "Excelente servicio"
+    assert out.consentimiento_aceptado is True
