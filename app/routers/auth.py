@@ -462,7 +462,7 @@ async def request_registration(
     )
 
     # 4. Armar los links oficiales para la Landing Page y correos
-    url_verificacion = f"{settings.clean_frontend_url}/verificar-registro?token={token}"
+    url_verificacion = f"{settings.clean_frontend_url}/verify-registration?token={token}"
     url_terminos = f"{settings.clean_frontend_url}/terminos"
     url_privacidad = f"{settings.clean_frontend_url}/privacidad"
     url_software = f"{settings.clean_frontend_url}/login"
