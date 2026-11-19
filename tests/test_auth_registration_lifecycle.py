@@ -161,3 +161,40 @@ def test_contacto_and_leads_endpoint(client):
         assert res_s.status_code == 201
         assert res_s.json()["success"] is True
         assert mock_send.call_count == 3
+
+
+def test_solicitar_demo_endpoint(client):
+    """
+    Verifica la captura de solicitudes de demo personalizada desde el banner de la Landing Page
+    en /solicitar-demo y /leads/demo.
+    """
+    with patch("app.routers.contacto_router._send_mail", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = True
+
+        # 1. Probar en /solicitar-demo
+        res = client.post(
+            "/solicitar-demo",
+            json={
+                "email": "lead.demo@banco.com",
+                "nombre": "Roberto Gerente",
+                "empresa": "Banco Mercantil",
+                "telefono": "+591 70001234"
+            }
+        )
+        assert res.status_code == 201
+        data = res.json()
+        assert data["success"] is True
+        assert "demostración" in data["message"].lower() or "demo" in data["message"].lower()
+        # Se envía 1 email al admin y 1 correo de cortesía al usuario (total 2)
+        assert mock_send.call_count == 2
+
+        # 2. Probar en /leads/demo (alias) con campos opcionales omitidos
+        res_alias = client.post(
+            "/leads/demo",
+            json={
+                "email": "fundador@startup.com"
+            }
+        )
+        assert res_alias.status_code == 201
+        assert res_alias.json()["success"] is True
+        assert mock_send.call_count == 4
