@@ -246,12 +246,14 @@ def eliminar_datos_personales_procedimiento(
         suscriptor_id=None,
         usuario_id=admin_id,
         accion="DERECHOS_DATOS_ELIMINACION",
-        entidad="Destinatario/RespuestaEncuesta/AudioRespuesta",
+        modulo="DERECHOS_DATOS",
         entidad_id=identificador,
-        detalles=(
-            f"Se ejecutó el derecho de supresión de datos personales para '{identificador}'. "
-            f"Respuestas eliminadas: {total_respuestas}, Audios eliminados: {total_audios}. Motivo: {motivo}"
-        ),
+        detalles={
+            "persona_identificador": identificador,
+            "motivo": motivo,
+            "respuestas_eliminadas": total_respuestas,
+            "audios_eliminados": total_audios,
+        },
     )
     db.add(audit)
     db.commit()

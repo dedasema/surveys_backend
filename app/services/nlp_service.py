@@ -1,7 +1,9 @@
 # app/services/nlp_service.py
 from __future__ import annotations
-import os, uuid, json, re, functools, itertools
+import os, uuid, json, re, functools, itertools, logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from collections import Counter, defaultdict, OrderedDict
 from typing import List, Dict, Any, Optional
 
@@ -125,7 +127,7 @@ class _Utils:
                 if res:
                     return res
             except Exception as e:
-                print(f"Error llamando a Gemini API: {e}")
+                logger.error("Error llamando a Gemini API: %s", e)
 
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key and openai_key.strip():
@@ -143,7 +145,7 @@ class _Utils:
                     .strip()
                 )
             except Exception as e:
-                print(f"Error llamando a OpenAI API: {e}")
+                logger.error("Error llamando a OpenAI API: %s", e)
 
         return "1. Mantener un seguimiento activo de la satisfacción.\n2. Analizar comentarios negativos periódicamente.\n3. Capacitar al personal en resolución de dudas.\n4. Medir NPS frecuentemente.\n5. Optimizar los tiempos de respuesta."
 

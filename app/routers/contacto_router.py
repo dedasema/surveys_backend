@@ -5,7 +5,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,8 +33,36 @@ class ContactoLeadCreate(BaseModel):
     email: EmailStr
     empresa: Optional[str] = None
     mensaje: str
-    origen: Optional[str] = "producto"
-    tipo: Optional[str] = "comercial"
+    origen: ContactoOrigenEnum = ContactoOrigenEnum.producto
+    tipo: ContactoTipoEnum = ContactoTipoEnum.comercial
+
+    @field_validator("origen", mode="before")
+    @classmethod
+    def validate_origen(cls, v):
+        if v is None:
+            return ContactoOrigenEnum.producto
+        val = str(getattr(v, "value", v)).strip().lower()
+        if val in ("producto", "corporativo"):
+            return val
+        raise ValueError(
+            f"Origen no permitido: '{v}'. Valores permitidos: 'producto', 'corporativo'"
+        )
+
+    @field_validator("tipo", mode="before")
+    @classmethod
+    def validate_tipo(cls, v):
+        if v is None:
+            return ContactoTipoEnum.comercial
+        val = str(getattr(v, "value", v)).strip().lower()
+        if val in ("comercial", "soporte_tecnico", "derechos_datos"):
+            return val
+        if "soporte" in val:
+            return "soporte_tecnico"
+        if "derecho" in val or "arco" in val or "datos" in val:
+            return "derechos_datos"
+        raise ValueError(
+            f"Tipo no permitido: '{v}'. Valores permitidos: 'comercial', 'soporte_tecnico', 'derechos_datos'"
+        )
 
 
 class ContactoLeadResponse(BaseModel):

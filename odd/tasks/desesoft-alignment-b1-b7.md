@@ -1,6 +1,6 @@
 # Desesoft SurveySaaS Public & Core Alignment (B1-B7)
 Author: Senior Architect
-Status: In Progress
+Status: Completed
 
 ## Specs
 - S1: "B1. POST /contacto (P1): Acepta y guarda dos campos nuevos: origen: 'producto' o 'corporativo'. tipo: 'comercial', 'soporte_tecnico' o 'derechos_datos'. Valida con Pydantic (enumeraciones) y rechaza valores desconocidos con 422. Guarda la consulta en la base de datos (crea la migración de Alembic: columnas origen y tipo en la tabla de contactos, con valor por defecto para los registros anteriores). El correo que se envía a Desesoft debe mostrar origen y tipo en el asunto y el cuerpo (por ejemplo [Derechos sobre mis datos · producto] Asunto…). Agrega la URL del sitio corporativo a la lista de orígenes CORS permitidos mediante variable de entorno (CORS_ORIGINS), sin dejar * en producción. Limita las peticiones por IP a este endpoint (por ejemplo 5 por minuto) para evitar abuso."
@@ -12,13 +12,14 @@ Status: In Progress
 - S7: "B7. Calidad (P2): Reemplaza los print() por logging (logger = logging.getLogger(__name__)). Lógica de negocio en services/; los routers solo manejan HTTP y validación de roles. Black y Flake8 con línea máxima de 100 caracteres (pyproject.toml y .flake8) y paso flake8 en el CI. Pruebas para: POST /contacto (campos nuevos y validación), consentimiento obligatorio, y eliminación de datos con auditoría."
 
 ## Tasks
-- T1 (S1): Implementar modelo Contacto, migración DDL, validaciones enum origen/tipo en POST /contacto, despacho de correo formateado, CORS_ORIGINS y rate-limiting por IP [inline]
-- T2 (S2): Implementar endpoint/servicio para eliminación de datos personales (respuestas y audios) con registro en AuditLog y marca visible de derechos de datos [inline]
-- T3 (S3): Implementar validación estricta de consentimiento_aceptado en POST /public/entregas/{id}/respuestas y guardar consentimiento_en en entrega_encuesta [inline]
-- T4 (S4): Agregar firma de marca 'Impulsado por Desesoft — SurveySaaS' al pie de PDFs con QR y correos de invitación [inline]
-- T5 (S5): Agregar campos de bonificación en Suscriptor, cálculo de cupo efectivo en plan_limits_service y endpoint administrativo para sumar cupos [inline]
-- T6 (S6): Corregir version.json con SHA-256 real del APK (e297c8c5...), tamaño, fecha y novedades [inline]
-- T7 (S7): Configurar .flake8 y pyproject.toml con max-line-length 100, reemplazar print() por logging, y añadir suite de tests unitarios para B1, B2 y B3 [inline]
+- [x] T1 (S1): Implementar modelo Contacto, migración DDL, validaciones enum origen/tipo en POST /contacto, despacho de correo formateado, CORS_ORIGINS y rate-limiting por IP [commit: 2affee9, verified]
+- [x] T2 (S2): Implementar endpoint/servicio para eliminación de datos personales (respuestas y audios) con registro en AuditLog y marca visible de derechos de datos [commit: 2affee9, verified]
+- [x] T3 (S3): Implementar validación estricta de consentimiento_aceptado en POST /public/entregas/{id}/respuestas y guardar consentimiento_en en entrega_encuesta [commit: 2affee9, verified]
+- [x] T4 (S4): Agregar firma de marca 'Impulsado por Desesoft — SurveySaaS' al pie de PDFs con QR y correos de invitación [commit: 2affee9, verified]
+- [x] T5 (S5): Agregar campos de bonificación en Suscriptor, cálculo de cupo efectivo en plan_limits_service y endpoint administrativo para sumar cupos [commit: 2affee9, verified]
+- [x] T6 (S6): Corregir version.json con SHA-256 real del APK (e297c8c5...), tamaño, fecha y novedades [verified]
+- [x] T7 (S7): Configurar .flake8 y pyproject.toml con max-line-length 100, reemplazar print() por logging, y añadir suite de tests unitarios para B1, B2 y B3 [verified]
 
 ## Log
 - L1: Solicitud del usuario: Implementar puntos B1 a B7 de alineación con documento final de la materia sin parar.
+- L2: Implementados endpoints, servicios, migraciones y suite de pruebas pasando al 100%. Todas las metas verificadas.

@@ -156,15 +156,15 @@ def delete_suscripcion(db: Session, sus_id: str) -> None:
         try:
             response = stripe.Subscription.delete(sus.stripe_subscription_id)
             if response["status"] != "canceled":
-                print(f"⚠️ Stripe no canceló la suscripción: {response}")
+                logger.warning("Stripe no canceló la suscripción: %s", response)
                 raise Exception("No se pudo cancelar la suscripción en Stripe")
             else:
-                print(f"✅ Stripe canceló la suscripción: {sus.stripe_subscription_id}")
+                logger.info("Stripe canceló la suscripción: %s", sus.stripe_subscription_id)
         except Exception as e:
-            print(f"❌ Error al cancelar en Stripe: {e}")
+            logger.error("Error al cancelar en Stripe: %s", e)
             raise Exception(f"Error al cancelar en Stripe: {e}")
 
     # Eliminar en base de datos solo si se canceló exitosamente
     db.delete(sus)
     db.commit()
-    print(f"✅ Suscripción eliminada en base de datos: {sus.id}")
+    logger.info("Suscripción eliminada en base de datos: %s", sus.id)
