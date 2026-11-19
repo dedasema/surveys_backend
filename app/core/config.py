@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     GMAIL_SECRET_TOKEN: Optional[str] = os.getenv("GMAIL_SECRET_TOKEN", "")
     EMAIL_FROM: Optional[str] = os.getenv("EMAIL_FROM", os.getenv("MAIL_FROM", os.getenv("SMTP_FROM", "dedasema734012@gmail.com")))
     ADMIN_NOTIFICATION_EMAIL: Optional[str] = os.getenv("ADMIN_NOTIFICATION_EMAIL", "")
-    COMERCIAL_EMAIL: str = os.getenv("COMERCIAL_EMAIL", "soporte@desesoft.com")
+    COMERCIAL_EMAIL: str = os.getenv("COMERCIAL_EMAIL", os.getenv("ADMIN_NOTIFICATION_EMAIL", "dedasema734012@gmail.com"))
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
     tctokenservice: Optional[str] = os.getenv("tctokenservice", os.getenv("tcTokenService", os.getenv("TCTOKENSERVICE", "")))
     tctokensecret: Optional[str] = os.getenv("tctokensecret", os.getenv("tcTokenSecret", os.getenv("TCTOKENSECRET", "")))

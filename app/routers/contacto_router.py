@@ -264,7 +264,7 @@ async def solicitar_demo(
         getattr(settings, "ADMIN_NOTIFICATION_EMAIL", None) or
         settings.EMAIL_FROM or
         settings.SMTP_USERNAME or
-        "soporte@desesoft.com"
+        "dedasema734012@gmail.com"
     ).strip()
 
     fecha_solicitud = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")

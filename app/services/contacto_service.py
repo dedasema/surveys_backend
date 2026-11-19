@@ -100,7 +100,8 @@ async def despachar_correo_contacto(contacto: Contacto, sender=None) -> bool:
 
     destinatario_comercial = (
         getattr(settings, "COMERCIAL_EMAIL", None) or
-        "soporte@desesoft.com"
+        destinatario_admin or
+        "dedasema734012@gmail.com"
     ).strip()
 
     destinatario_destino = (
