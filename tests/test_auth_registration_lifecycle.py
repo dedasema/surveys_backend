@@ -119,7 +119,7 @@ def test_contacto_and_leads_endpoint(client):
     """
     Verifica la captura de leads del formulario de la Landing Page en /contacto y /leads.
     """
-    with patch("app.services.email_service._send_mail", new_callable=AsyncMock) as mock_send:
+    with patch("app.routers.contacto_router._send_mail", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = True
 
         # Prueba en /contacto
@@ -147,3 +147,17 @@ def test_contacto_and_leads_endpoint(client):
         )
         assert res_l.status_code == 201
         assert res_l.json()["success"] is True
+
+        # Prueba en /soporte
+        res_s = client.post(
+            "/soporte",
+            json={
+                "nombre": "Pedro Soporte",
+                "email": "pedro@soporte.com",
+                "empresa": "Empresa SAC",
+                "mensaje": "[TECNICA] Tengo un problema al subir las fotos de encuestas."
+            }
+        )
+        assert res_s.status_code == 201
+        assert res_s.json()["success"] is True
+        assert mock_send.call_count == 3

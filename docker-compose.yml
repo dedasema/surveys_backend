@@ -39,6 +39,8 @@ services:
       dockerfile: Dockerfile
     container_name: surveys_api
     restart: unless-stopped
+    env_file:
+      - .env
     depends_on:
       db:
         condition: service_healthy
@@ -59,6 +61,8 @@ services:
       dockerfile: Dockerfile
     container_name: surveys_worker
     restart: unless-stopped
+    env_file:
+      - .env
     command: python -m app.workers.channel_worker
     depends_on:
       db:
