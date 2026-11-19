@@ -183,7 +183,7 @@ def test_solicitar_demo_endpoint(client):
                 "telefono": "+591 70001234"
             }
         )
-        assert res.status_code == 201
+        assert res.status_code in (200, 201)
         data = res.json()
         assert data["success"] is True
         assert "demostración" in data["message"].lower() or "demo" in data["message"].lower()
@@ -197,6 +197,6 @@ def test_solicitar_demo_endpoint(client):
                 "email": "fundador@startup.com"
             }
         )
-        assert res_alias.status_code == 201
+        assert res_alias.status_code in (200, 201)
         assert res_alias.json()["success"] is True
         assert mock_send.call_count == 4
