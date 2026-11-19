@@ -27,6 +27,30 @@ private_router = APIRouter(
     tags=["Respuestas Admin"]
 )
 
+
+async def validate_entrega_access(
+    campana_id: UUID,
+    entrega_id: UUID,
+    token_data: TokenData,
+    db: Session
+) -> None:
+    entrega = get_entrega(db, entrega_id)
+    if not entrega or str(entrega.campana_id) != str(campana_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no encontrada")
+
+    from app.services.campanas_service import get_campana
+    from app.core.security import validate_subscriber_access
+    campana = get_campana(db, campana_id)
+    if not campana:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada")
+
+    ok = await validate_subscriber_access(token_data, campana.suscriptor_id, db)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para acceder a esta entrega"
+        )
+
 @public_router.post("", response_model=RespuestaEncuestaOut, status_code=status.HTTP_201_CREATED)
 async def submit_respuesta(
     entrega_id: UUID,

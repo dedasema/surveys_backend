@@ -2,7 +2,10 @@ from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
 from uuid import UUID
 from datetime import datetime
+import logging
 from fastapi import HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from app.core.constants import (
     ESTADO_PENDIENTE, ESTADO_ENVIADO, 

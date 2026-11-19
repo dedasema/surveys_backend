@@ -29,14 +29,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run test suite
+      - name: Lint with flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treats all other style issues as warnings
+          flake8 app --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
+
+      - name: Run test suite with coverage
         env:
           SECRET_KEY: test_secret_key_ci_environment_32chars_min
           ALGORITHM: HS256
           ACCESS_TOKEN_EXPIRE_MINUTES: 60
           DATABASE_URL: "sqlite:///:memory:"
         run: |
-          pytest -v
+          pytest -v --cov=app --cov-report=term-missing --cov-report=xml
 
   deploy:
     name: Continuous Deployment to AWS EC2
@@ -64,4 +71,23 @@ jobs:
           script: |
             cd /home/ubuntu/surveys_backend
             git pull origin main
-            sudo docker compose restart api worker
+            sudo docker compose up -d --build api worker
+            echo "Verificando disponibilidad de la API..."
+            HEALTH_CHECK_PASSED=false
+            for i in {1..15}; do
+              if curl -fsS http://localhost:8000/ > /dev/null && curl -fsS http://localhost:8000/metrics > /dev/null; then
+                echo "Healthcheck exitoso en el intento $i: GET / y GET /metrics responden 200 OK."
+                HEALTH_CHECK_PASSED=true
+                break
+              fi
+              echo "Intento $i/15 fallido, reintentando en 3 segundos..."
+              sleep 3
+            done
+
+            if [ "$HEALTH_CHECK_PASSED" != "true" ]; then
+              echo "ERROR: Falló el healthcheck post-despliegue. La API no responde en GET / o GET /metrics."
+              exit 1
+            fi
+
+            echo "=== Muestra de Telemetría (/metrics) ==="
+            curl -fsS http://localhost:8000/metrics | head -n 20

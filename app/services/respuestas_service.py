@@ -2,6 +2,7 @@ from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
 from uuid import UUID
 from datetime import datetime
+from fastapi import HTTPException, status
 try:
     from thefuzz import fuzz
 except Exception:

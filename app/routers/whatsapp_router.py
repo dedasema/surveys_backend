@@ -20,7 +20,7 @@ from app.core.database import get_db
 from app.models.survey import EntregaEncuesta, PreguntaEncuesta
 from app.services import whatsapp_service as ws
 from app.services.whatsapp_parser import parse_webhook
-from app.services.entregas_service import get_entrega_by_destinatario
+from app.services.entregas_service import get_entrega_by_destinatario, mark_as_responded
 from app.services.conversacion_service import (
     iniciar_conversacion_whatsapp,
     procesar_respuesta,

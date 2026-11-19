@@ -2,8 +2,11 @@ try:
     import stripe
 except ImportError:
     stripe = None
+import logging
 from sqlalchemy.orm import Session
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from app.models.subscription import PlanSuscripcion, SuscripcionSuscriptor
 from app.schemas.subscription import (

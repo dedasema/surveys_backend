@@ -29,7 +29,10 @@ from uuid import UUID
 from app.services.email_service import enviar_email_recuperacion_contrasena, enviar_email_verificacion
 from app.services.s3_service import is_s3_configured, upload_file_to_s3
 import secrets, jwt
+import logging
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 

@@ -35,6 +35,15 @@ router = APIRouter(
     tags=["Suscripciones"]
 )
 
+
+def _init_stripe() -> None:
+    if stripe is None:
+        raise HTTPException(status_code=500, detail="Stripe no está disponible")
+    key = getattr(settings, 'STRIPE_SECRET_KEY', None)
+    if not key:
+        raise HTTPException(status_code=500, detail="STRIPE_SECRET_KEY no configurado")
+    stripe.api_key = key
+
 # ---------------- PLANES DE SUSCRIPCIÓN ----------------
 
 @router.post(
