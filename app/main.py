@@ -456,6 +456,7 @@ from app.modules.respuestas.infrastructure.router import (
     respuestas_public_router,
     respuestas_private_router,
     encuestas_public_router,
+    respuestas_router,
 )
 from app.modules.channels.infrastructure.router import whatsapp_router
 from app.modules.analytics.infrastructure.router import (
@@ -508,6 +509,7 @@ app.include_router(entregas_router)
 app.include_router(destinatarios_router)
 app.include_router(respuestas_public_router)
 app.include_router(respuestas_private_router)
+app.include_router(respuestas_router)
 app.include_router(public_entregas_router)
 app.include_router(whatsapp_router)
 app.include_router(analytics_router)

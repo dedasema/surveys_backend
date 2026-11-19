@@ -13,20 +13,22 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import get_current_user, validate_subscriber_access, require_acceso_suscriptor_activo
+from app.core.security import (
+    get_current_user,
+    validate_subscriber_access,
+    require_acceso_suscriptor_activo,
+)
 from app.models.cuenta_usuario import CuentaUsuario
 from app.schemas.auth import TokenData
 
 from app.modules.campanas.application.dtos import CreateCampanaCommand, UpdateCampanaCommand
 from app.modules.campanas.application.use_cases import (
     CreateCampanaUseCase,
-    GetCampanaUseCase,
     ListCampanasUseCase,
     UpdateCampanaUseCase,
     DeleteCampanaUseCase,
 )
 from app.modules.campanas.domain.entities import EstadoCampanaEnum
-from app.modules.campanas.domain.exceptions import CampanaNotFoundError
 from app.modules.campanas.infrastructure.repositories import SqlAlchemyCampanaRepository
 from app.modules.campanas.infrastructure.schemas import (
     CampanaCreate,
@@ -35,6 +37,7 @@ from app.modules.campanas.infrastructure.schemas import (
     CampanaDetailOut,
     CampanaFullDetailOut,
 )
+from app.schemas.respuestas_schema import RespuestaListItemOut
 
 # Services for specialized side-effects (e.g. background delivery, excel export)
 from app.services.campanas_service import (
@@ -201,7 +204,8 @@ async def exportar_excel_campana_endpoint(
         )
 
     excel_stream = generar_excel_respuestas_campana(db, campana_id)
-    filename = f"respuestas_{campana.nombre.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    clean_nombre = campana.nombre.replace(" ", "_")
+    filename = f"respuestas_{clean_nombre}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     encoded_filename = urllib.parse.quote(filename)
 
     return StreamingResponse(
@@ -211,6 +215,24 @@ async def exportar_excel_campana_endpoint(
             "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
+    )
+
+
+@router.get("/{campana_id}/respuestas", response_model=List[RespuestaListItemOut])
+async def list_campana_respuestas_endpoint(
+    campana_id: UUID,
+    skip: int = 0,
+    limit: int = 500,
+    token_data: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.modules.respuestas.infrastructure.router import list_all_respuestas_endpoint
+    return await list_all_respuestas_endpoint(
+        campana_id=campana_id,
+        skip=skip,
+        limit=limit,
+        token_data=token_data,
+        db=db,
     )
 
 
