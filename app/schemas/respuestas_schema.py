@@ -25,6 +25,7 @@ class RespuestaEncuestaBase(BaseModel):
 
 class RespuestaEncuestaCreate(RespuestaEncuestaBase):
     respuestas_preguntas: List[RespuestaPreguntaCreate]
+    consentimiento_aceptado: Optional[bool] = None
 
 class RespuestaEncuestaUpdate(BaseModel):
     pass  # Mantén 'pass' si no quedan otros campos

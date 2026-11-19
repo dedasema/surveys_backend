@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
@@ -5,6 +6,8 @@ try:
     import stripe
 except ImportError:
     stripe = None
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.security import get_admin_user, get_empresa_user, get_current_user
@@ -174,8 +177,7 @@ def obtener_suscripcion_actual(
             } if suscripcion.plan else None
         }
     except Exception as e:
-        import traceback
-        print(f"Error consultando suscripción actual: {traceback.format_exc()}")
+        logger.exception("Error consultando suscripción actual: %s", e)
         raise HTTPException(status_code=500, detail=f"Error consultando suscripción actual: {str(e)}")
 
 @router.get(
@@ -362,17 +364,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
         )
     except Exception as e:
-        print(f"Webhook error: {e}")
+        logger.error("Webhook error: %s", e)
         raise HTTPException(status_code=400, detail="Webhook error")
 
-    print(f"Evento recibido: {event['type']}")
+    logger.info("Evento recibido: %s", event['type'])
 
     try:
         obj = event["data"]["object"]
         event_type = event["type"]
 
         if event_type == "checkout.session.completed":
-            print(f"Payload completo de checkout.session.completed: {obj}")
+            logger.info("Payload completo de checkout.session.completed: %s", obj)
             stripe_sub_id = obj.get("subscription")
             customer_id = obj.get("customer")
 
@@ -386,19 +388,19 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 suscripcion.estado = "activo"
                 suscripcion.suscriptor.estado = "activo"  # <-- ACTIVAMOS EL SUSCRIPTOR
                 db.commit()
-                print(f"Suscripción activada en checkout.session.completed: {stripe_sub_id}")
+                logger.info("Suscripción activada en checkout.session.completed: %s", stripe_sub_id)
             else:
-                print(f"No se encontró suscripción pendiente o falta subscription_id en checkout.session.completed")
+                logger.warning("No se encontró suscripción pendiente o falta subscription_id en checkout.session.completed")
 
         elif event_type == "invoice.paid":
-            print(f"Payload completo de invoice.paid: {obj}")
+            logger.info("Payload completo de invoice.paid: %s", obj)
             stripe_sub_id = (
                 obj.get("subscription") or
                 (obj.get("parent", {}).get("subscription_details", {}).get("subscription"))
             )
 
             if not stripe_sub_id:
-                print("invoice.paid recibido pero sin subscription ID. Revisa el payload arriba.")
+                logger.warning("invoice.paid recibido pero sin subscription ID.")
                 return {"status": "ignored"}
 
             suscripcion = db.query(SuscripcionSuscriptor).filter_by(stripe_subscription_id=stripe_sub_id).first()
@@ -406,15 +408,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 suscripcion.estado = "activo"
                 suscripcion.suscriptor.estado = "activo"  # <-- ACTIVAMOS EL SUSCRIPTOR
                 db.commit()
-                print(f"Suscripción activada en invoice.paid: {stripe_sub_id}")
+                logger.info("Suscripción activada en invoice.paid: %s", stripe_sub_id)
             else:
-                print(f"No se encontró suscripción con stripe_subscription_id={stripe_sub_id}")
+                logger.warning("No se encontró suscripción con stripe_subscription_id=%s", stripe_sub_id)
 
         elif event_type == "customer.subscription.deleted":
-            print(f"Payload completo de customer.subscription.deleted: {obj}")
+            logger.info("Payload completo de customer.subscription.deleted: %s", obj)
             stripe_sub_id = obj.get("id")
             if not stripe_sub_id:
-                print("customer.subscription.deleted recibido pero sin ID")
+                logger.warning("customer.subscription.deleted recibido pero sin ID")
                 return {"status": "ignored"}
 
             suscripcion = db.query(SuscripcionSuscriptor).filter_by(stripe_subscription_id=stripe_sub_id).first()
@@ -422,12 +424,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 suscripcion.estado = "inactivo"
                 suscripcion.suscriptor.estado = "inactivo"  # <-- DESACTIVAMOS EL SUSCRIPTOR
                 db.commit()
-                print(f"Suscripción inactivada: {stripe_sub_id}")
+                logger.info("Suscripción inactivada: %s", stripe_sub_id)
             else:
-                print(f"No se encontró suscripción con stripe_subscription_id={stripe_sub_id}")
+                logger.warning("No se encontró suscripción con stripe_subscription_id=%s", stripe_sub_id)
 
     except Exception as e:
-        print(f"Error procesando evento: {e}")
+        logger.error("Error procesando evento: %s", e)
         raise HTTPException(status_code=500, detail="Error procesando evento")
 
     return {"status": "success"}
@@ -469,7 +471,7 @@ def obtener_metricas_dashboard(db: Session = Depends(get_db)):
         }
 
     except Exception as e:
-        print(f"Error al obtener métricas: {e}")
+        logger.error("Error al obtener métricas: %s", e)
         raise HTTPException(status_code=500, detail="No se pudieron obtener las métricas del dashboard")
 
 
@@ -629,7 +631,7 @@ def create_customer_portal_session(
             )
             return {"url": portal_session.url}
         except Exception as exc:
-            print(f"Error creando sesión de customer portal en Stripe: {exc}")
+            logger.error("Error creando sesión de customer portal en Stripe: %s", exc)
 
     # Fallback si no hay customer_id o Stripe no está configurado
     return {"url": f"{settings.clean_frontend_url}/dashboard/suscripcion"}

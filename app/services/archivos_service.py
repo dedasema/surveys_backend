@@ -1,7 +1,10 @@
 # app/services/archivos_service.py
+import logging
 import os
 import uuid
 import mimetypes
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
@@ -307,7 +310,7 @@ def eliminar_archivo_empresa(
         try:
             os.remove(clean_path)
         except Exception as e:
-            print(f"Error borrando archivo en disco: {e}")
+            logger.error("Error borrando archivo en disco: %s", e)
 
     db.delete(archivo)
     db.commit()

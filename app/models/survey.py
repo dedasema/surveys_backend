@@ -86,6 +86,8 @@ class EntregaEncuesta(Base):
     estado_id       = Column(Integer, ForeignKey("estado_entrega.id"), default=1)
     enviado_en      = Column(TIMESTAMP(timezone=True))
     respondido_en   = Column(TIMESTAMP(timezone=True))
+    consentimiento_aceptado = Column(Boolean, default=False, nullable=True)
+    consentimiento_en       = Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Relaciones
     campana = relationship("CampanaEncuesta", back_populates="entregas")

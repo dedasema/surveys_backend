@@ -8,10 +8,12 @@ Chat GPT para SurveySaaS  –  OpenAI v1  (sin embeddings)
 """
 
 from __future__ import annotations
-import os, json
+import os, json, logging
 from uuid import UUID
 from typing import Any, Dict, List, Optional
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.orm import Session
 
@@ -197,7 +199,7 @@ async def chat_completion(
 
             return {"answer": res.get("text", "").strip(), "action_log": []}
         except Exception as e:
-            print(f"Error llamando a Gemini en chat_service: {e}")
+            logger.error("Error llamando a Gemini en chat_service: %s", e)
             return {
                 "answer": f"Error comunicándose con Gemini API: {str(e)}",
                 "action_log": []

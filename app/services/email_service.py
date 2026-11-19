@@ -184,6 +184,9 @@ async def enviar_email(
         <p>Si el botón no funciona, puedes copiar y pegar este enlace en tu navegador:</p>
         <p style="word-break: break-all; font-size: 12px;">{url_encuesta}</p>
         <p>El enlace estará activo por {settings.SURVEY_LINK_EXPIRY_DAYS} días.</p>
+        <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b;">
+            Impulsado por Desesoft — SurveySaaS
+        </div>
     </div>
     """
     
@@ -191,6 +194,9 @@ async def enviar_email(
     Hola {destinatario_nombre},
     Te invitamos a participar en nuestra encuesta: {nombre_campana}.
     Para responder, visita: {url_encuesta}
+
+    ---
+    Impulsado por Desesoft — SurveySaaS
     """
     
     return await _send_mail(destinatario_email, destinatario_nombre, asunto, html_content, text_content)

@@ -228,3 +228,8 @@ def _render_survey_page(c: Canvas, entrega: EntregaEncuesta, preguntas: List[Pre
 
         if y < BOTTOM_MARGIN + 20 * mm:
             break
+
+    # Pie de página de marca oficial (B4)
+    c.setFont("Helvetica-Oblique", 8)
+    c.setFillColorRGB(0.35, 0.35, 0.35)
+    c.drawCentredString(PAGE_W / 2, 10 * mm, "Impulsado por Desesoft — SurveySaaS")

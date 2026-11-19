@@ -1,4 +1,5 @@
 # app/services/audit_service.py
+import logging
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session
 from fastapi import Request
 
 from app.models.audit_log import AuditLog
+
+logger = logging.getLogger(__name__)
 
 def registrar_auditoria(
     db: Session,
@@ -40,7 +43,7 @@ def registrar_auditoria(
         return log_entry
     except Exception as e:
         db.rollback()
-        print(f"Error registrando auditoria: {e}")
+        logger.error("Error registrando auditoria: %s", e)
         return None
 
 def listar_auditoria(

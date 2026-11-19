@@ -59,6 +59,14 @@ async def submit_respuesta_endpoint(
         raise HTTPException(status_code=404, detail="Entrega no encontrada")
     if entrega.respondido_en:
         raise HTTPException(status_code=400, detail="Esta encuesta ya ha sido respondida")
+    if payload.consentimiento_aceptado is not True:
+        raise HTTPException(status_code=400, detail="Debe aceptar el consentimiento informado para enviar las respuestas.")
+
+    from datetime import datetime, timezone
+    entrega.consentimiento_aceptado = True
+    entrega.consentimiento_en = datetime.now(timezone.utc)
+    db.add(entrega)
+    db.commit()
     return create_respuesta(db, entrega_id, payload)
 
 

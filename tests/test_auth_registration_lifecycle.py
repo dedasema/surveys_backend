@@ -119,6 +119,8 @@ def test_contacto_and_leads_endpoint(client):
     """
     Verifica la captura de leads del formulario de la Landing Page en /contacto y /leads.
     """
+    from app.core.rate_limit import _request_history
+    _request_history.clear()
     with patch("app.routers.contacto_router._send_mail", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = True
 

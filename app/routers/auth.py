@@ -1,9 +1,12 @@
 # app/routers/auth.py
 
+import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Body, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.security import (
@@ -143,9 +146,9 @@ async def register_usuario(
             url_reset=reset_link
         )
         if not enviado:
-            print(f"Warning: No se pudo enviar el correo de recuperación a {payload.email} (SMTP deshabilitado o no configurado)")
+            logger.warning("No se pudo enviar el correo de recuperación a %s (SMTP deshabilitado o no configurado)", payload.email)
     except Exception as e:
-        print(f"Error enviando correo de recuperación a {payload.email}: {e}")
+        logger.error("Error enviando correo de recuperación a %s: %s", payload.email, e)
 
     return user
 
@@ -212,7 +215,7 @@ def login(
             detalles={"tipo_usuario": user.__class__.__name__}
         )
     except Exception as e_audit:
-        print(f"Warning: No se pudo registrar auditoría de login: {e_audit}")
+        logger.warning("No se pudo registrar auditoría de login: %s", e_audit)
 
     return {
         "access_token": access_token,

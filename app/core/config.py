@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     AWS_S3_BUCKET_NAME: Optional[str] = os.getenv("AWS_S3_BUCKET_NAME", "")
     AWS_S3_CUSTOM_DOMAIN: Optional[str] = os.getenv("AWS_S3_CUSTOM_DOMAIN", "")
+    CORS_ORIGINS: Optional[str] = os.getenv("CORS_ORIGINS", "")
 
     @property
     def pagofacil_token_service(self) -> str:

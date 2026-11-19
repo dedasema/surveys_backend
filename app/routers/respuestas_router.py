@@ -67,6 +67,19 @@ async def submit_respuesta(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Esta encuesta ya ha sido respondida"
         )
+
+    # Validar consentimiento obligatorio informado (B3)
+    if payload.consentimiento_aceptado is not True:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe aceptar el consentimiento informado para enviar las respuestas."
+        )
+
+    from datetime import datetime, timezone
+    entrega.consentimiento_aceptado = True
+    entrega.consentimiento_en = datetime.now(timezone.utc)
+    db.add(entrega)
+    db.commit()
     
     return create_respuesta(db, entrega_id, payload)
 

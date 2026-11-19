@@ -19,16 +19,25 @@ os.makedirs("uploads/audio", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 origins = [
+    "https://desesoft.vercel.app",
     "https://dgqv4314frd93.cloudfront.net",
     "https://surveysfrontend.vercel.app",
     "http://localhost:3000",
+    "http://localhost:4321",
     "http://localhost:5173",
     "http://localhost:8000",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:4321",
     "http://127.0.0.1:5173",
 ]
 if settings.clean_frontend_url and settings.clean_frontend_url not in origins:
     origins.append(settings.clean_frontend_url)
+
+if settings.CORS_ORIGINS:
+    for extra_origin in settings.CORS_ORIGINS.split(","):
+        clean_extra = extra_origin.strip()
+        if clean_extra and clean_extra not in origins:
+            origins.append(clean_extra)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,17 +81,19 @@ async def startup_event():
     import app.models.archivo_empresa
     import app.models.pagofacil
     import app.models.copilot_session
+    import app.models.contacto
 
     # Auto-create missing tables and migrate schema in database
     try:
         from sqlalchemy import text
-        with engine.connect() as conn:
-            # Extensión pgvector (si está soportada en el servidor PostgreSQL)
-            try:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-                conn.commit()
-            except Exception as e_vec:
-                print(f"Nota: pgvector no pudo ser inicializado en PostgreSQL local/remoto ({e_vec})")
+        if "sqlite" not in str(engine.url):
+            with engine.connect() as conn:
+                # Extensión pgvector (si está soportada en el servidor PostgreSQL)
+                try:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                    conn.commit()
+                except Exception as e_vec:
+                    print(f"Nota: pgvector no pudo ser inicializado en PostgreSQL local/remoto ({e_vec})")
 
         # 1. Crear todas las tablas del modelo que no existan
         Base.metadata.create_all(bind=engine)

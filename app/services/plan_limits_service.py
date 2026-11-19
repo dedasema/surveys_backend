@@ -106,12 +106,26 @@ def validate_operadores_limit(db: Session, suscriptor_id: UUID) -> None:
         )
 
 
-def validate_entregas_limit(db: Session, suscriptor_id: UUID, nuevas_entregas: int = 1) -> None:
+def get_effective_entregas_limit(db: Session, suscriptor_id: UUID):
     """
-    Valida la cuota mensual de entregas del suscriptor.
+    Retorna (limite_efectivo, limite_plan, bono_entregas).
+    Límite efectivo = límite base del plan + bonificación asignada.
     """
     plan = get_plan_suscriptor(db, suscriptor_id)
-    if plan.max_entregas == -1:
+    if plan.max_entregas in (-1, 0):
+        return -1, -1, 0
+    from app.models.suscriptor import Suscriptor
+    sus = db.get(Suscriptor, suscriptor_id)
+    bono = (sus.bono_entregas or 0) if sus else 0
+    return plan.max_entregas + bono, plan.max_entregas, bono
+
+
+def validate_entregas_limit(db: Session, suscriptor_id: UUID, nuevas_entregas: int = 1) -> None:
+    """
+    Valida la cuota mensual de entregas del suscriptor considerando bonificaciones (B5).
+    """
+    limite_efectivo, limite_plan, bono = get_effective_entregas_limit(db, suscriptor_id)
+    if limite_efectivo == -1:
         return  # Ilimitado
 
     now = datetime.now()
@@ -129,10 +143,10 @@ def validate_entregas_limit(db: Session, suscriptor_id: UUID, nuevas_entregas: i
         .count()
     )
 
-    if (current_count + nuevas_entregas) > plan.max_entregas:
+    if (current_count + nuevas_entregas) > limite_efectivo:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"La cantidad de entregas supera la cuota mensual de tu plan ({plan.max_entregas} entregas/mes)."
+            detail=f"La cantidad de entregas supera la cuota mensual disponible ({limite_efectivo} entregas/mes: {limite_plan} de plan + {bono} de bonificación)."
         )
 
 

@@ -33,8 +33,8 @@ jobs:
         run: |
           # Stop the build if there are Python syntax errors or undefined names
           flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
-          # Exit-zero treats all other style issues as warnings
-          flake8 app --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
+          # Enforce code style with max line length of 100 characters (.flake8)
+          flake8 app --count --exit-zero --max-line-length=100 --statistics
 
       - name: Run test suite with coverage
         env:

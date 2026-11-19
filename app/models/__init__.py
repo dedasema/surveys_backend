@@ -13,3 +13,4 @@ from app.models.audio_respuesta import AudioRespuesta
 from app.models.archivo_empresa import ArchivoEmpresa
 from app.models.pagofacil import PagoFacilTransaccion
 from app.models.copilot_session import CopilotSesion, CopilotMensaje
+from app.models.contacto import Contacto

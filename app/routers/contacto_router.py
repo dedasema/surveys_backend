@@ -1,24 +1,67 @@
 # app/routers/contacto_router.py
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from datetime import datetime, timezone
 import logging
-from app.services.email_service import _send_mail
+from typing import List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.rate_limit import rate_limit_ip
+from app.core.security import get_admin_user
+from app.models.contacto import Contacto
+from app.schemas.auth import TokenData
+from app.services.contacto_service import (
+    ContactoOrigenEnum,
+    ContactoTipoEnum,
+    crear_contacto,
+    despachar_correo_contacto,
+    eliminar_datos_personales_procedimiento,
+)
+from app.services.email_service import _send_mail
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Contacto & Leads"])
+
 
 class ContactoLeadCreate(BaseModel):
     nombre: str
     email: EmailStr
     empresa: Optional[str] = None
     mensaje: str
+    origen: Optional[str] = "producto"
+    tipo: Optional[str] = "comercial"
+
 
 class ContactoLeadResponse(BaseModel):
     success: bool
     message: str
+    contacto_id: Optional[UUID] = None
+
+
+class ContactoOut(BaseModel):
+    id: UUID
+    nombre: str
+    email: str
+    empresa: Optional[str] = None
+    mensaje: str
+    origen: str
+    tipo: str
+    creado_en: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EliminarDatosPersonaRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    telefono: Optional[str] = None
+    motivo: str = "Solicitud de ejercicio de derechos sobre datos personales"
+
 
 class SolicitarDemoCreate(BaseModel):
     email: EmailStr
@@ -26,96 +69,119 @@ class SolicitarDemoCreate(BaseModel):
     empresa: Optional[str] = None
     telefono: Optional[str] = None
 
+
 class SolicitarDemoResponse(BaseModel):
     success: bool
     message: str
 
-@router.post("/contacto", response_model=ContactoLeadResponse, status_code=status.HTTP_201_CREATED)
-@router.post("/leads", response_model=ContactoLeadResponse, status_code=status.HTTP_201_CREATED)
-@router.post("/soporte", response_model=ContactoLeadResponse, status_code=status.HTTP_201_CREATED)
-async def recibir_contacto_lead(payload: ContactoLeadCreate):
-    """
-    Captura un prospecto/lead comercial o ticket de soporte desde los formularios web
-    y despacha una alerta por correo a la cuenta corporativa/administrador.
-    """
-    destinatario_admin = (
-        getattr(settings, "ADMIN_NOTIFICATION_EMAIL", None) or
-        settings.EMAIL_FROM or
-        settings.SMTP_USERNAME or
-        "dedasema734012@gmail.com"
-    ).strip()
 
-    es_soporte = (
-        payload.mensaje.strip().startswith("[") or
-        "soporte" in payload.mensaje.lower() or
-        "ticket" in payload.mensaje.lower() or
-        "ayuda" in payload.mensaje.lower()
+@router.post(
+    "/contacto",
+    response_model=ContactoLeadResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_ip(max_requests=5, window_seconds=60))],
+)
+@router.post(
+    "/leads",
+    response_model=ContactoLeadResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_ip(max_requests=5, window_seconds=60))],
+)
+@router.post(
+    "/soporte",
+    response_model=ContactoLeadResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_ip(max_requests=5, window_seconds=60))],
+)
+async def recibir_contacto_lead(
+    payload: ContactoLeadCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Captura un prospecto/lead comercial, ticket de soporte o solicitud de derechos
+    de datos desde formularios web, valida enums con 422, persiste en BD y despacha
+    la alerta oficial por correo a Desesoft con origen y tipo.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    ip_origen = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else None)
+
+    # Persistir en base de datos
+    contacto = crear_contacto(
+        db=db,
+        nombre=payload.nombre,
+        email=payload.email,
+        mensaje=payload.mensaje,
+        empresa=payload.empresa,
+        origen=payload.origen,
+        tipo=payload.tipo,
+        ip_origen=ip_origen,
     )
 
-    if es_soporte:
-        asunto = f"🛠️ Nuevo Ticket de Soporte SurveySaaS: {payload.nombre}"
-        titulo_box = "Nueva Solicitud de Soporte Técnico"
-        pie_box = "Notificación automática de SurveySaaS • Centro de Soporte al Cliente."
-    else:
-        asunto = f"🚀 Nuevo Lead Comercial en SurveySaaS: {payload.nombre}"
-        titulo_box = "Nuevo Lead Comercial desde la Landing Page"
-        pie_box = "Notificación automática de SurveySaaS CRM • Contacto comercial recibido en tiempo real."
-    
-    html_content = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-        <h2 style="color: #1e293b; margin-top: 0;">{titulo_box}</h2>
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-weight: bold; color: #475569; width: 140px;">Nombre:</td>
-                <td style="padding: 10px; color: #1e293b;">{payload.nombre}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-weight: bold; color: #475569;">Email:</td>
-                <td style="padding: 10px; color: #1e293b;"><a href="mailto:{payload.email}" style="color: #2563eb;">{payload.email}</a></td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px; font-weight: bold; color: #475569;">Empresa:</td>
-                <td style="padding: 10px; color: #1e293b;">{payload.empresa or 'No especificada'}</td>
-            </tr>
-        </table>
-        <div style="margin-top: 15px;">
-            <p style="font-weight: bold; color: #475569; margin-bottom: 5px;">Mensaje:</p>
-            <div style="background-color: #f8fafc; padding: 15px; border-left: 4px solid #2563eb; border-radius: 4px; color: #334155; font-size: 14px; line-height: 1.6;">
-                {payload.mensaje}
-            </div>
-        </div>
-        <p style="color: #94a3b8; font-size: 12px; margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-            {pie_box}
-        </p>
-    </div>
-    """
-    
-    text_content = f"""
-    {titulo_box}:
-    - Nombre: {payload.nombre}
-    - Email: {payload.email}
-    - Empresa: {payload.empresa or 'No especificada'}
-    - Mensaje: {payload.mensaje}
-    """
-
+    # Despachar correo a Desesoft
     try:
-        enviado = await _send_mail(
-            destinatario_email=destinatario_admin,
-            destinatario_nombre="Admin SurveySaaS",
-            asunto=asunto,
-            html_content=html_content,
-            text_content=text_content
-        )
-        if not enviado:
-            logger.warning(f"No se pudo despachar el correo de contacto a {destinatario_admin}")
-    except Exception as e:
-        logger.error(f"Error despachando correo de lead a {destinatario_admin}: {e}")
+        await despachar_correo_contacto(contacto, sender=_send_mail)
+    except Exception as exc:
+        logger.error("Error despachando correo de contacto %s: %s", contacto.id, exc)
 
     return ContactoLeadResponse(
         success=True,
-        message="Mensaje recibido correctamente. Nos pondremos en contacto contigo a la brevedad."
+        message="Mensaje recibido correctamente. Nos pondremos en contacto contigo a la brevedad.",
+        contacto_id=contacto.id,
     )
 
+
+# ---------------- B2: Consultas y Derechos sobre los Datos (Admin) ----------------
+
+@router.get(
+    "/contacto/consultas",
+    response_model=List[ContactoOut],
+    dependencies=[Depends(get_admin_user)],
+    summary="Listado de contactos para el administrador con filtro por tipo (B2)",
+)
+def listar_consultas_contacto(
+    tipo: Optional[ContactoTipoEnum] = Query(None, description="Filtrar por tipo (ej: derechos_datos)"),
+    origen: Optional[ContactoOrigenEnum] = Query(None, description="Filtrar por origen"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Contacto)
+    if tipo:
+        query = query.filter(Contacto.tipo == tipo.value)
+    if origen:
+        query = query.filter(Contacto.origen == origen.value)
+    return query.order_by(Contacto.creado_en.desc()).all()
+
+
+@router.post(
+    "/contacto/derechos-datos/eliminar",
+    dependencies=[Depends(get_admin_user)],
+    summary="Eliminación administrativa de respuestas y audios de una persona con bitácora de auditoría (B2)",
+)
+def eliminar_datos_persona_endpoint(
+    payload: EliminarDatosPersonaRequest,
+    admin: TokenData = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    admin_uuid = None
+    try:
+        admin_uuid = UUID(admin.sub)
+    except Exception:
+        pass
+
+    try:
+        resultado = eliminar_datos_personales_procedimiento(
+            db=db,
+            admin_id=admin_uuid,
+            email=payload.email,
+            telefono=payload.telefono,
+            motivo=payload.motivo,
+        )
+        return {"success": True, **resultado}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
+
+# ---------------- Solicitud de Demos ----------------
 
 @router.post("/solicitar-demo", response_model=SolicitarDemoResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/leads/demo", response_model=SolicitarDemoResponse, status_code=status.HTTP_201_CREATED)
@@ -132,11 +198,9 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
         "dedasema734012@gmail.com"
     ).strip()
 
-    from datetime import datetime, timezone
     fecha_solicitud = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
-
     asunto_admin = f"🎯 Solicitud de Demo Personalizada: {payload.email}"
-    
+
     html_admin = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
         <div style="background-color: #eff6ff; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2563eb;">
@@ -166,7 +230,8 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
             </tr>
         </table>
         <p style="color: #94a3b8; font-size: 12px; margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-            Notificación automática de SurveySaaS CRM • Registro instantáneo de demo comercial.
+            Notificación automática de SurveySaaS CRM • Registro instantáneo de demo comercial.<br>
+            Impulsado por Desesoft — SurveySaaS
         </p>
     </div>
     """
@@ -178,21 +243,22 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
     - Empresa: {payload.empresa or 'No especificada'}
     - Teléfono: {payload.telefono or 'No especificado'}
     - Fecha: {fecha_solicitud}
+
+    ---
+    Impulsado por Desesoft — SurveySaaS
     """
 
-    # 1. Enviar notificación al equipo comercial/admin
     try:
         await _send_mail(
             destinatario_email=destinatario_admin,
             destinatario_nombre="Admin SurveySaaS",
             asunto=asunto_admin,
             html_content=html_admin,
-            text_content=text_admin
+            text_content=text_admin,
         )
     except Exception as e:
-        logger.error(f"Error despachando correo de solicitud de demo a {destinatario_admin}: {e}")
+        logger.error("Error despachando correo de solicitud de demo a %s: %s", destinatario_admin, e)
 
-    # 2. Correo de cortesía automático al interesado
     try:
         nombre_cliente = payload.nombre or "Colega"
         asunto_cliente = "¡Hemos recibido tu solicitud de Demo! - SurveySaaS"
@@ -218,7 +284,8 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
                 • Empresa: {payload.empresa or 'No especificada'}
             </div>
             <p style="color: #94a3b8; font-size: 12px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-                Deseosoft SRL • Santa Cruz de la Sierra, Bolivia.
+                Desesoft S.R.L. • Santa Cruz de la Sierra, Bolivia.<br>
+                Impulsado por Desesoft — SurveySaaS
             </p>
         </div>
         """
@@ -226,18 +293,22 @@ async def solicitar_demo(payload: SolicitarDemoCreate):
         Hola {nombre_cliente},
         Gracias por tu interés en SurveySaaS. Hemos recibido tu solicitud de demo personalizada.
         Un asesor comercial se pondrá en contacto contigo muy pronto.
+
+        ---
+        Desesoft S.R.L. • Santa Cruz de la Sierra, Bolivia.
+        Impulsado por Desesoft — SurveySaaS
         """
         await _send_mail(
             destinatario_email=payload.email,
             destinatario_nombre=nombre_cliente,
             asunto=asunto_cliente,
             html_content=html_cliente,
-            text_content=text_cliente
+            text_content=text_cliente,
         )
     except Exception as e_c:
-        logger.warning(f"No se pudo enviar correo de confirmación de demo a {payload.email}: {e_c}")
+        logger.warning("No se pudo enviar correo de confirmación de demo a %s: %s", payload.email, e_c)
 
     return SolicitarDemoResponse(
         success=True,
-        message="Solicitud de demo recibida exitosamente. Nos pondremos en contacto contigo a la brevedad."
+        message="Solicitud de demo recibida exitosamente. Nos pondremos en contacto contigo a la brevedad.",
     )

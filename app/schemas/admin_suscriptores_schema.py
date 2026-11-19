@@ -21,6 +21,10 @@ class ResumenUsoAdminOut(BaseModel):
     max_campanas: int = 5
     entregas_mes: int = 0
     max_entregas: int = 500
+    limite_plan_entregas: Optional[int] = None
+    bono_entregas: int = 0
+    bono_paginas_ocr: int = 0
+    bono_minutos_voz: int = 0
     operadores_activos: int = 0
     max_operadores: int = 1
 
@@ -68,6 +72,12 @@ class SuscriptorEstadoUpdate(BaseModel):
 
 class SuscriptorAsignarPlan(BaseModel):
     plan_id: int = Field(..., description="ID del plan a asignar a la empresa")
+
+
+class CupoAdicionalUpdate(BaseModel):
+    bono_entregas: Optional[int] = Field(None, ge=0, description="Cupo adicional de entregas/respuestas")
+    bono_paginas_ocr: Optional[int] = Field(None, ge=0, description="Cupo adicional de páginas OCR")
+    bono_minutos_voz: Optional[int] = Field(None, ge=0, description="Cupo adicional de minutos de voz")
 
 
 class OperadorOut(BaseModel):

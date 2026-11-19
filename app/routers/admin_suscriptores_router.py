@@ -22,6 +22,7 @@ from app.schemas.admin_suscriptores_schema import (
     SuscriptorDetail360Out,
     SuscriptorEstadoUpdate,
     SuscriptorAsignarPlan,
+    CupoAdicionalUpdate,
     OperadorOut,
     ResumenUsoAdminOut
 )
@@ -59,13 +60,23 @@ def _build_resumen_uso(db: Session, suscriptor_id: UUID, plan: PlanSuscripcion) 
         .count()
     )
 
+    sus = db.get(Suscriptor, suscriptor_id)
+    bono_entregas = (sus.bono_entregas or 0) if sus else 0
+    bono_ocr = (sus.bono_paginas_ocr or 0) if sus else 0
+    bono_voz = (sus.bono_minutos_voz or 0) if sus else 0
+    max_entregas_efectivo = -1 if plan.max_entregas in (-1, 0) else (plan.max_entregas + bono_entregas)
+
     return {
         "plantillas_usadas": plantillas_usadas,
         "max_plantillas": plan.max_plantillas,
         "campanas_activas": campanas_activas,
         "max_campanas": plan.max_campanas,
         "entregas_mes": entregas_mes,
-        "max_entregas": plan.max_entregas,
+        "max_entregas": max_entregas_efectivo,
+        "limite_plan_entregas": plan.max_entregas,
+        "bono_entregas": bono_entregas,
+        "bono_paginas_ocr": bono_ocr,
+        "bono_minutos_voz": bono_voz,
         "operadores_activos": operadores_activos,
         "max_operadores": plan.max_operadores
     }
@@ -336,6 +347,34 @@ def asignar_plan_suscriptor_endpoint(
     )
     db.add(nueva_sub)
     db.commit()
+
+    return get_suscriptor_detail_endpoint(suscriptor_id, db)
+
+
+# 6.1 ASIGNAR CUPO ADICIONAL (BONUS)
+@router.put(
+    "/{suscriptor_id}/cupo-adicional",
+    response_model=SuscriptorDetail360Out,
+    summary="Asigna o ajusta cupo adicional (bonus) a la empresa sin cambiar de plan"
+)
+def update_cupo_adicional_endpoint(
+    suscriptor_id: UUID,
+    payload: CupoAdicionalUpdate,
+    db: Session = Depends(get_db)
+):
+    suscriptor = db.get(Suscriptor, suscriptor_id)
+    if not suscriptor:
+        raise HTTPException(status_code=404, detail="Suscriptor no encontrado")
+
+    if payload.bono_entregas is not None:
+        suscriptor.bono_entregas = payload.bono_entregas
+    if payload.bono_paginas_ocr is not None:
+        suscriptor.bono_paginas_ocr = payload.bono_paginas_ocr
+    if payload.bono_minutos_voz is not None:
+        suscriptor.bono_minutos_voz = payload.bono_minutos_voz
+
+    db.commit()
+    db.refresh(suscriptor)
 
     return get_suscriptor_detail_endpoint(suscriptor_id, db)
 

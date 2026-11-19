@@ -16,6 +16,9 @@ class Suscriptor(Base):
     creado_en = Column(TIMESTAMP(timezone=True), server_default=func.now())
     stripe_customer_id = Column(Text, nullable=True)
     foto_url = Column(Text, nullable=True)
+    bono_entregas = Column(Integer, default=0, nullable=False)
+    bono_paginas_ocr = Column(Integer, default=0, nullable=False)
+    bono_minutos_voz = Column(Integer, default=0, nullable=False)
 
     rol = relationship("Rol")
     usuarios = relationship("CuentaUsuario", back_populates="suscriptor")
